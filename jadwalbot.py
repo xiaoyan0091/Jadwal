@@ -263,12 +263,12 @@ def format_jadwal_hari_ini():
         msg += "❌ <i>Tidak ada jadwal donghua hari ini dalam waktu dekat</i>\n"
     
     # Upcoming section dengan format blockquote seperti di foto
-    msg += "\n<b>Upcoming Donghua :</b>"
+    msg += "\n<b>Upcoming Donghua :\n</b>"
     
     if jadwal_data["upcoming"]:
         for i, up in enumerate(jadwal_data["upcoming"], 1):
             # Format blockquote hijau seperti di foto dengan format yang diperbaiki
-            msg += f'<blockquote expandable>{i}. <b>{up["judul"]}</b>'
+            msg += f'<blockquote>{i}. <b>{up["judul"]}</b>'
             if up.get("season"):
                 msg += f'[Season {up["season"]}]'
             msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
@@ -298,16 +298,16 @@ def format_jadwal_lengkap():
         msg += "Tidak ada jadwal hari ini\n"
     
     # Upcoming section
-    msg += "\n<b>Upcoming Donghua :</b>\n"
+    msg += "\n<b>Upcoming Donghua :\n</b>\n"
     
     if jadwal_data["upcoming"]:
         for i, up in enumerate(jadwal_data["upcoming"], 1):
-            msg += f'<blockquote expandable>{i}. <b>{up["judul"]}</b>'
+            msg += f'<blockquote>{i}. <b>{up["judul"]}</b>'
             if up.get("season"):
                 msg += f'[Season {up["season"]}]'
             msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
     else:
-        msg += "<blockquote>Belum ada upcoming donghua</blockquote>\n"
+        msg += "<blockquote> Belum ada upcoming donghua dalam waktu dekat </blockquote>\n"
     
     # Footer dengan link Telegraph
     if jadwal_data.get("telegraph_url"):
@@ -559,7 +559,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"<b>👀 PREVIEW RULES</b>\n\n"
                 f"<i>Ini yang akan tampil saat user ketik /rules:</i>\n\n"
-                f"<blockquote expandable>{format_rules_message()}</blockquote>\n\n"
+                f"<blockquote >{format_rules_message()}</blockquote>\n\n"
                 f"<i>💡 Rules akan otomatis terhapus setelah 10 detik!</i>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
@@ -884,7 +884,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"<b>📢 PREVIEW HARI INI</b>\n\n"
                 f"<i>Ini yang akan dipost otomatis:</i>\n\n"
-                f"<blockquote expandable>{msg}</blockquote>",
+                f"<blockquote>{msg}</blockquote>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🚀 Send Now ke Semua", callback_data="send_now")],
@@ -1153,7 +1153,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>Rules Berhasil Diset!</b>\n\n"
             f"<b>📜 Preview Rules:</b>\n"
-            f"<blockquote expandable>{format_rules_message()}</blockquote>\n\n"
+            f"<blockquote>{format_rules_message()}</blockquote>\n\n"
             f"<b>✨ Fitur Rules:</b>\n"
             f"• Command: <code>/rules</code>\n"
             f"• Anti spam: 20 menit\n"

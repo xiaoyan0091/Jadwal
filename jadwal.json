@@ -7,7 +7,6 @@
     "Rabu": [
       "Twin Martial Souls",
       "Soul Land 2",
-      "Twin Martial Souls 1",
       "Twin Martial Souls 2",
       "Twin Martial Souls 3"
     ],
@@ -16,21 +15,7 @@
     "Sabtu": [],
     "Minggu": []
   },
-  "upcoming": [
-    {
-      "judul": "Deep Dive Forced Rewind",
-      "hari": "Rabu",
-      "tanggal": "5 November 2025",
-      "link": "https://youtube.com/watch?v=xxx"
-    },
-    {
-      "judul": "Immortality",
-      "hari": "Rabu",
-      "tanggal": "20 Desember 2025",
-      "link": "https://youtube.com/watch?v=xxx",
-      "season": "5"
-    }
-  ],
+  "upcoming": [],
   "channels": [
     "-1002372420001",
     "-1002652503756"
@@ -38,5 +23,6 @@
   "post_time": "16:59",
   "auto_post_enabled": true,
   "telegraph_token": "42403670639569da0a30f5ded004e40f910af96f5bd021f70a7d97b8bc6f",
-  "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-13"
+  "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-13",
+  "rules_text": "<b>📜 RULES GRUP</b>\n\n1. <b>Dilarang spam</b>\n2. <i>Sopan dan santun</i>\n3. <u>No 18+ content</u>"
 }
