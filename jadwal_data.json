@@ -1,0 +1,17 @@
+{
+  "harian": {
+    "Senin": [],
+    "Selasa": [],
+    "Rabu": [],
+    "Kamis": [],
+    "Jumat": [],
+    "Sabtu": [],
+    "Minggu": []
+  },
+  "upcoming": [],
+  "channel_id": "",
+  "post_time": "06:00",
+  "auto_post_enabled": false,
+  "telegraph_token": "",
+  "telegraph_url": ""
+}

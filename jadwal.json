@@ -1,0 +1,32 @@
+{
+  "harian": {
+    "Senin": [
+      "Purple River Season 2"
+    ],
+    "Selasa": [],
+    "Rabu": [
+      "Twin Martial Souls",
+      "Soul Land 2",
+      "Twin Martial Souls 1",
+      "Twin Martial Souls 2",
+      "Twin Martial Souls 3"
+    ],
+    "Kamis": [],
+    "Jumat": [],
+    "Sabtu": [],
+    "Minggu": []
+  },
+  "upcoming": [
+    {
+      "judul": "Deep Dive Forced Rewind",
+      "hari": "Rabu",
+      "tanggal": "5 November 2025",
+      "link": "https://youtube.com/watch?v=xxx"
+    }
+  ],
+  "channel_id": "-1002652503756",
+  "post_time": "12:00",
+  "auto_post_enabled": true,
+  "telegraph_token": "93b88d258e22cba5e786add4095c058e3ee74f375109b4a10a2249d5c766",
+  "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-12"
+}
