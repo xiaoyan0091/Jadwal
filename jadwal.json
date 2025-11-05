@@ -22,11 +22,21 @@
       "hari": "Rabu",
       "tanggal": "5 November 2025",
       "link": "https://youtube.com/watch?v=xxx"
+    },
+    {
+      "judul": "Immortality",
+      "hari": "Rabu",
+      "tanggal": "20 Desember 2025",
+      "link": "https://youtube.com/watch?v=xxx",
+      "season": "5"
     }
   ],
-  "channel_id": "-1002652503756",
-  "post_time": "12:00",
+  "channels": [
+    "-1002372420001",
+    "-1002652503756"
+  ],
+  "post_time": "16:59",
   "auto_post_enabled": true,
-  "telegraph_token": "93b88d258e22cba5e786add4095c058e3ee74f375109b4a10a2249d5c766",
-  "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-12"
+  "telegraph_token": "42403670639569da0a30f5ded004e40f910af96f5bd021f70a7d97b8bc6f",
+  "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-13"
 }
