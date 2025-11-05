@@ -11,6 +11,7 @@ import pytz
 import signal
 import sys
 import os
+from functools import lru_cache
 
 # =================== CONFIG ===================
 BOT_TOKEN = "7240322775:AAFw4mmT7NpDed38TX6jSLIYjxRLmM4fsW8"  
@@ -31,10 +32,24 @@ jadwal_data = {
     "post_time": "06:00",
     "auto_post_enabled": False,
     "telegraph_token": "",
-    "telegraph_url": ""
+    "telegraph_url": "",
+    "rules_text": ""  # Rules text dengan support HTML
 }
 user_cooldown = {}
 last_jadwal_time = None  # Waktu terakhir jadwal dikirim
+last_rules_time = None  # Waktu terakhir rules dikirim
+
+# =================== CACHE ===================
+@lru_cache(maxsize=128)
+def cached_get_today():
+    """Cache hari ini untuk meningkatkan performa"""
+    days = {"Monday":"Senin","Tuesday":"Selasa","Wednesday":"Rabu","Thursday":"Kamis","Friday":"Jumat","Saturday":"Sabtu","Sunday":"Minggu"}
+    return days[datetime.now(WIB).strftime("%A")]
+
+@lru_cache(maxsize=64)
+def cached_format_time(hour, minute):
+    """Cache format waktu"""
+    return f"{hour:02d}:{minute:02d}"
 
 # =================== TELEGRAPH FUNCTIONS ===================
 def create_telegraph_account():
@@ -222,13 +237,16 @@ def load_data():
                 jadwal_data["channels"].append(jadwal_data["channel_id"])
                 del jadwal_data["channel_id"]
                 save_data()
+            # Ensure rules_text exists
+            if "rules_text" not in jadwal_data:
+                jadwal_data["rules_text"] = ""
+                save_data()
     except Exception as e:
         logger.error(f"Load data error: {e}")
         save_data()
 
 def get_today():
-    days = {"Monday":"Senin","Tuesday":"Selasa","Wednesday":"Rabu","Thursday":"Kamis","Friday":"Jumat","Saturday":"Sabtu","Sunday":"Minggu"}
-    return days[datetime.now(WIB).strftime("%A")]
+    return cached_get_today()
 
 def format_jadwal_hari_ini():
     """Format jadwal PERSIS seperti di foto contoh"""
@@ -299,6 +317,13 @@ def format_jadwal_lengkap():
     
     return msg
 
+def format_rules_message():
+    """Format pesan rules dengan hashtag"""
+    if not jadwal_data.get("rules_text"):
+        return "❌ <i>Rules belum diset oleh admin</i>\n\n#rulesbot"
+    
+    return f"{jadwal_data['rules_text']}\n\n#rulesbot"
+
 # =================== COMMAND HANDLERS ===================
 async def jadwal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_jadwal_time
@@ -366,6 +391,80 @@ Command Jadwal dapat diakses {minutes_left} menit lagi. Jadwal sudah pernah diki
     except Exception as e:
         logger.error(f"Send message error: {e}")
 
+async def rules_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global last_rules_time
+    user_id = update.effective_user.id
+    now = datetime.now(WIB)
+    
+    # Owner tidak perlu anti spam
+    if user_id != OWNER_ID:
+        # Cek anti spam 20 menit
+        if last_rules_time:
+            time_diff = now - last_rules_time
+            if time_diff < timedelta(minutes=20):
+                minutes_ago = int(time_diff.total_seconds() / 60)
+                minutes_left = 20 - minutes_ago
+                
+                anti_spam_msg = f"""Anti Spam!
+Command Rules dapat diakses {minutes_left} menit lagi. Rules sudah pernah dikirim {minutes_ago} menit yang lalu, tekan hashtag
+#rulesbot"""
+                
+                # Tunggu 2 detik lalu hapus pesan command
+                await asyncio.sleep(2)
+                try: 
+                    await update.message.delete()
+                except Exception as e:
+                    logger.error(f"Delete message error: {e}")
+                
+                # Kirim pesan anti spam
+                spam_msg = await update.effective_chat.send_message(anti_spam_msg)
+                
+                # Hapus pesan anti spam setelah 5 detik
+                await asyncio.sleep(5)
+                try:
+                    await spam_msg.delete()
+                except Exception as e:
+                    logger.error(f"Delete spam message error: {e}")
+                
+                return
+    
+    # Rate limit 5 per menit
+    if user_id in user_cooldown:
+        if len([t for t in user_cooldown[user_id] if (now-t).seconds < 60]) >= 5:
+            return
+        user_cooldown[user_id].append(now)
+    else:
+        user_cooldown[user_id] = [now]
+    
+    # Tunggu 2 detik lalu hapus pesan command
+    await asyncio.sleep(2)
+    try: 
+        await update.message.delete()
+    except Exception as e:
+        logger.error(f"Delete message error: {e}")
+    
+    # Update waktu terakhir rules dikirim
+    last_rules_time = now
+    
+    # Kirim rules
+    try:
+        rules_msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=format_rules_message(),
+            parse_mode='HTML',
+            disable_web_page_preview=True
+        )
+        
+        # Hapus pesan rules setelah 10 detik
+        await asyncio.sleep(10)
+        try:
+            await rules_msg.delete()
+        except Exception as e:
+            logger.error(f"Delete rules message error: {e}")
+            
+    except Exception as e:
+        logger.error(f"Send rules message error: {e}")
+
 async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("⛔ Akses ditolak!")
@@ -375,6 +474,7 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time_info = jadwal_data["post_time"]
     auto_status = "🟢 AKTIF" if jadwal_data["auto_post_enabled"] else "🔴 NONAKTIF"
     telegraph_status = "🟢 AKTIF" if jadwal_data.get("telegraph_token") else "🔴 NONAKTIF"
+    rules_status = "🟢 SUDAH DISET" if jadwal_data.get("rules_text") else "🔴 BELUM DISET"
     
     today = get_today()
     jadwal_hari_ini = len(jadwal_data["harian"][today])
@@ -388,7 +488,9 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📺 Kelola Channel", callback_data="manage_channels"),
          InlineKeyboardButton("⏰ Set Jam Post", callback_data="set_time")],
         [InlineKeyboardButton("📰 Setup Telegraph", callback_data="setup_telegraph"),
-         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")]
+         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")],
+        [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules"),
+         InlineKeyboardButton("👀 Preview Rules", callback_data="preview_rules")]
     ]
     
     next_post = "Tidak ada" if not jadwal_data["auto_post_enabled"] else f"Bergiliran setiap hari jam {jadwal_data['post_time']}"
@@ -403,6 +505,7 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⏰ Jam auto post: <b>{time_info} WIB</b>
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
+📜 Rules: <b>{rules_status}</b>
 ⏭️ Posting: <b>{next_post}</b>
 
 <i>💡 Bot akan auto posting bergiliran sesuai format seperti di contoh!</i>"""
@@ -427,7 +530,53 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = query.data
     
-    if data == "manage_channels":
+    if data == "set_rules":
+        await query.edit_message_text(
+            "<b>📜 SET RULES GROUP</b>\n\n"
+            "Kirim teks rules yang akan ditampilkan saat user ketik <code>/rules</code>\n\n"
+            "<b>✨ Support HTML Tags:</b>\n"
+            "• <code>&lt;b&gt;Bold&lt;/b&gt;</code> → <b>Bold</b>\n"
+            "• <code>&lt;i&gt;Italic&lt;/i&gt;</code> → <i>Italic</i>\n"
+            "• <code>&lt;u&gt;Underline&lt;/u&gt;</code> → <u>Underline</u>\n"
+            "• <code>&lt;s&gt;Strike&lt;/s&gt;</code> → <s>Strike</s>\n"
+            "• <code>&lt;code&gt;Code&lt;/code&gt;</code> → <code>Code</code>\n"
+            "• <code>&lt;a href=\"link\"&gt;Text&lt;/a&gt;</code> → Link\n"
+            "• <code>&lt;blockquote&gt;Quote&lt;/blockquote&gt;</code> → Quote\n\n"
+            "<b>📝 Contoh Rules:</b>\n"
+            "<code>&lt;b&gt;📜 RULES GRUP&lt;/b&gt;\n\n"
+            "1. &lt;b&gt;Dilarang spam&lt;/b&gt;\n"
+            "2. &lt;i&gt;Sopan dan santun&lt;/i&gt;\n"
+            "3. &lt;u&gt;No 18+ content&lt;/u&gt;</code>\n\n"
+            "<i>💡 Rules akan otomatis terhapus setelah 10 detik!</i>\n"
+            "<i>🔒 Sistem anti spam 20 menit seperti jadwal!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+        )
+        context.user_data['waiting_input'] = 'set_rules'
+    
+    elif data == "preview_rules":
+        if jadwal_data.get("rules_text"):
+            await query.edit_message_text(
+                f"<b>👀 PREVIEW RULES</b>\n\n"
+                f"<i>Ini yang akan tampil saat user ketik /rules:</i>\n\n"
+                f"<blockquote expandable>{format_rules_message()}</blockquote>\n\n"
+                f"<i>💡 Rules akan otomatis terhapus setelah 10 detik!</i>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            )
+        else:
+            await query.edit_message_text(
+                "<b>📜 PREVIEW RULES</b>\n\n"
+                "❌ <b>Rules belum diset!</b>\n\n"
+                "Klik 'Set Rules' untuk mengatur rules group.",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules")],
+                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                ])
+            )
+    
+    elif data == "manage_channels":
         if jadwal_data["channels"]:
             keyboard = []
             for i, channel in enumerate(jadwal_data["channels"]):
@@ -629,8 +778,9 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "<b>❌ GAGAL UPDATE TELEGRAPH!</b>\n\n"
                 "Kemungkinan:\n"
-                "• Token expired\n"
-                "• Koneksi bermasalah\n\n"
+                "• Token tidak valid\n"
+                "• Koneksi bermasalah\n"
+                "• Telegraph server error\n\n"
                 "Coba buat token baru:",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
@@ -639,134 +789,182 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ])
             )
     
-    elif data == "tambah":
-        await query.edit_message_text(
-            "<b>➕ TAMBAH JADWAL DONGHUA</b>\n\n"
-            "<b>📝 Format Jadwal Harian:</b>\n"
-            "<code>Judul Anime|Hari</code>\n\n"
-            "<b>Contoh jadwal harian:</b>\n"
-            "<code>Purple River Season 2|Senin</code>\n"
-            "<code>Supreme Above The Sky|Selasa</code>\n"
-            "<code>Twin Martial Souls|Rabu</code>\n\n"
-            "<b>🔮 Format Upcoming:</b>\n"
-            "<code>Judul|Hari|Tanggal|Link</code>\n"
-            "<code>Judul|Hari|Tanggal|Link|Season</code> (dengan season)\n\n"
-            "<b>Contoh upcoming:</b>\n"
-            "<code>Deep Dive Forced Rewind|Rabu|5 November 2025|https://youtube.com/watch?v=xxx</code>\n"
-            "<code>Immortality|Sabtu|20 Desember 2025|https://youtube.com/watch?v=xxx|5</code>\n\n"
-            "<i>📝 Output akan muncul persis seperti contoh foto!</i>\n"
-            "<i>📰 Telegraph akan otomatis terupdate!</i>",
-            parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
-        )
-        context.user_data['waiting_input'] = 'tambah'
-        
     elif data == "set_time":
         await query.edit_message_text(
-            "<b>⏰ SET JAM AUTO POST HARIAN</b>\n\n"
-            "Kirim waktu posting dalam format 24 jam:\n\n"
-            "<b>Format:</b> <code>HH:MM</code>\n\n"
-            "<b>Contoh waktu posting:</b>\n"
-            "• <code>06:00</code> → Pagi jam 6:00 WIB\n"
-            "• <code>12:00</code> → Siang jam 12:00 WIB\n"
-            "• <code>18:15</code> → Sore jam 18:15 WIB\n"
-            "• <code>21:30</code> → Malam jam 21:30 WIB\n\n"
-            "<i>🌏 Zona waktu Indonesia (WIB/UTC+7)</i>\n\n"
-            "<b>🔄 Sistem Bergiliran:</b>\n"
-            "• Channel/Group 1: Posting tepat jam yang diset\n"
-            "• Channel/Group 2: Posting 1 menit kemudian\n"
-            "• Channel/Group 3: Posting 2 menit kemudian\n"
-            "• Dan seterusnya...\n\n"
-            "<b>💡 Bot akan posting format seperti foto contoh!</b>",
+            "<b>⏰ SET JAM AUTO POST BERGILIRAN</b>\n\n"
+            f"Jam sekarang: <b>{jadwal_data['post_time']} WIB</b>\n\n"
+            "Kirim jam posting otomatis dengan format <b>HH:MM</b>\n\n"
+            "<b>Contoh:</b> <code>06:00</code> atau <code>18:30</code>\n\n"
+            "<b>🔄 Cara Kerja Bergiliran:</b>\n"
+            "• Jam 06:00 → Channel/Group 1 posting\n"
+            "• Jam 06:01 → Channel/Group 2 posting\n"
+            "• Jam 06:02 → Channel/Group 3 posting\n"
+            "• Dan seterusnya setiap 1 menit!\n\n"
+            "<i>🌏 Menggunakan timezone WIB (UTC+7)</i>",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
         )
         context.user_data['waiting_input'] = 'time'
-        
+    
     elif data == "toggle_auto":
         jadwal_data["auto_post_enabled"] = not jadwal_data["auto_post_enabled"]
         save_data()
         
         if jadwal_data["auto_post_enabled"]:
-            if not jadwal_data["channels"]:
-                await query.answer("❌ Tambahkan channel/group dulu!")
-                jadwal_data["auto_post_enabled"] = False
-                save_data()
-                await panel_refresh(query, context)
-                return
-                
-            # Start auto posting job dengan timezone WIB
-            current_jobs = context.job_queue.get_jobs_by_name('daily_auto_post')
-            for job in current_jobs:
-                job.schedule_removal()
-                
-            try:
-                hour, minute = map(int, jadwal_data["post_time"].split(":"))
-                # Schedule job untuk setiap channel dengan interval 1 menit
-                for i, channel in enumerate(jadwal_data["channels"]):
-                    post_minute = (minute + i) % 60
-                    post_hour = hour + (minute + i) // 60
-                    if post_hour >= 24:
-                        post_hour = post_hour % 24
+            # Enable jobs dengan timezone WIB
+            if jadwal_data["channels"]:
+                try:
+                    hour, minute = map(int, jadwal_data["post_time"].split(":"))
+                    # Schedule job untuk setiap channel dengan interval 1 menit
+                    for i, channel in enumerate(jadwal_data["channels"]):
+                        post_minute = (minute + i) % 60
+                        post_hour = hour + (minute + i) // 60
+                        if post_hour >= 24:
+                            post_hour = post_hour % 24
+                        
+                        wib_time = time(post_hour, post_minute, tzinfo=WIB)
+                        context.job_queue.run_daily(
+                            scheduled_daily_post,
+                            time=wib_time,
+                            name=f'daily_auto_post_{i}',
+                            data={'channel': channel, 'index': i}
+                        )
                     
-                    wib_time = time(post_hour, post_minute, tzinfo=WIB)
-                    context.job_queue.run_daily(
-                        scheduled_daily_post,
-                        time=wib_time,
-                        name=f'daily_auto_post_{i}',
-                        data={'channel': channel, 'index': i}
-                    )
-                
-                await query.answer(f"✅ Auto post AKTIF! Bergiliran mulai jam {jadwal_data['post_time']} WIB ke {len(jadwal_data['channels'])} channel/group")
-            except Exception as e:
-                logger.error(f"Job schedule error: {e}")
-                await query.answer("❌ Error setting schedule!")
+                    status_msg = f"✅ <b>AUTO POST DIAKTIFKAN!</b>\n\n📊 <b>Schedule Bergiliran:</b>\n"
+                    for i, channel in enumerate(jadwal_data["channels"]):
+                        post_minute = (minute + i) % 60
+                        post_hour = hour + (minute + i) // 60
+                        if post_hour >= 24:
+                            post_hour = post_hour % 24
+                        status_msg += f"  • {channel}: {cached_format_time(post_hour, post_minute)} WIB\n"
+                    
+                except Exception as e:
+                    logger.error(f"Enable auto post error: {e}")
+                    status_msg = "⚠️ <b>AUTO POST AKTIF</b>\nTapi ada error scheduling!"
+            else:
+                status_msg = "⚠️ <b>AUTO POST AKTIF</b>\nTapi belum ada channel terdaftar!"
         else:
-            # Remove all auto post jobs
-            for i in range(len(jadwal_data.get("channels", []))):
+            # Disable semua jobs
+            for i in range(10):  # Max 10 channels untuk clean up
                 current_jobs = context.job_queue.get_jobs_by_name(f'daily_auto_post_{i}')
                 for job in current_jobs:
                     job.schedule_removal()
-            await query.answer("🔴 Auto post DINONAKTIFKAN!")
-        
-        await panel_refresh(query, context)
-        
-    elif data == "preview":
-        preview_msg = format_jadwal_hari_ini()
+            
+            status_msg = "🔴 <b>AUTO POST DINONAKTIFKAN!</b>\n\nBot tidak akan posting otomatis."
         
         await query.edit_message_text(
-            f"<b>👀 PREVIEW OUTPUT SEPERTI FOTO</b>\n\n"
-            f"<i>Ini yang akan dipost (format sama persis):</i>\n\n"
-            f"<blockquote expandable>{preview_msg}</blockquote>",
+            status_msg + "\n\n<i>💡 Status disimpan otomatis!</i>",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 Kirim Sekarang", callback_data="send_now"),
-                 InlineKeyboardButton("◀️ Kembali", callback_data="back")]
-            ])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
         )
-        
+    
+    elif data == "tambah":
+        await query.edit_message_text(
+            "<b>➕ TAMBAH JADWAL DONGHUA</b>\n\n"
+            "<b>Format Jadwal Harian:</b>\n"
+            "<code>Judul Anime|Hari</code>\n\n"
+            "<b>Format Upcoming:</b>\n"
+            "<code>Judul|Hari|Tanggal|Link</code>\n"
+            "<code>Judul|Hari|Tanggal|Link|Season</code>\n\n"
+            "<b>📝 Contoh:</b>\n"
+            "• <code>Purple River Season 2|Senin</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|https://link.com|3</code>\n\n"
+            "<b>📅 Hari yang valid:</b>\n"
+            "Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu\n\n"
+            "<i>💡 Jadwal harian akan muncul setiap hari sesuai hari yang dipilih!</i>\n"
+            "<i>🔮 Upcoming akan muncul di blockquote hijau seperti contoh!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+        )
+        context.user_data['waiting_input'] = 'tambah'
+    
+    elif data == "preview":
+        msg = format_jadwal_hari_ini()
+        try:
+            await query.edit_message_text(
+                f"<b>📢 PREVIEW HARI INI</b>\n\n"
+                f"<i>Ini yang akan dipost otomatis:</i>\n\n"
+                f"<blockquote expandable>{msg}</blockquote>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🚀 Send Now ke Semua", callback_data="send_now")],
+                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                ])
+            )
+        except Exception as e:
+            logger.error(f"Preview error: {e}")
+            await query.edit_message_text(
+                "<b>❌ Error Preview</b>\n\nGagal generate preview jadwal.",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            )
+    
     elif data == "send_now":
         if not jadwal_data["channels"]:
-            await query.answer("❌ Tambahkan channel/group dulu!")
+            await query.answer("❌ Belum ada channel terdaftar!")
             return
-            
+        
+        await query.edit_message_text(
+            "<b>🚀 MENGIRIM KE SEMUA CHANNEL/GROUP...</b>\n\n"
+            f"📊 <b>Target:</b> {len(jadwal_data['channels'])} channel/group\n"
+            "<i>⏳ Sedang mengirim bergiliran...</i>",
+            parse_mode='HTML'
+        )
+        
+        success_count = 0
+        error_count = 0
+        
         try:
-            success_count = 0
-            for channel in jadwal_data["channels"]:
+            # Update Telegraph dulu
+            if jadwal_data.get("telegraph_token"):
+                update_telegraph()
+            
+            message = format_jadwal_hari_ini()
+            
+            # Kirim ke semua channel bergiliran dengan delay 1 menit
+            for i, channel in enumerate(jadwal_data["channels"]):
                 try:
+                    if i > 0:  # Delay untuk channel kedua dan seterusnya
+                        await asyncio.sleep(60)  # 1 menit delay
+                    
                     await context.bot.send_message(
                         chat_id=channel,
-                        text=format_jadwal_hari_ini(),
+                        text=message,
                         parse_mode='HTML',
                         disable_web_page_preview=True
                     )
                     success_count += 1
-                    await asyncio.sleep(1)  # Delay 1 detik antar channel
+                    
+                    # Update progress
+                    if i < len(jadwal_data["channels"]) - 1:
+                        await query.edit_message_text(
+                            f"<b>🚀 MENGIRIM BERGILIRAN...</b>\n\n"
+                            f"✅ <b>Berhasil:</b> {success_count}\n"
+                            f"❌ <b>Gagal:</b> {error_count}\n"
+                            f"⏳ <b>Progress:</b> {i+1}/{len(jadwal_data['channels'])}\n\n"
+                            f"<i>⏰ Menunggu 1 menit untuk channel berikutnya...</i>",
+                            parse_mode='HTML'
+                        )
+                    
                 except Exception as e:
                     logger.error(f"Send to {channel} error: {e}")
+                    error_count += 1
             
-            await query.answer(f"✅ Jadwal berhasil dikirim ke {success_count}/{len(jadwal_data['channels'])} channel/group!")
-            await panel_refresh(query, context)
+            # Final result
+            telegraph_info = " + Telegraph updated" if jadwal_data.get("telegraph_token") else ""
+            
+            await query.edit_message_text(
+                f"<b>🎯 SEND NOW SELESAI!</b>\n\n"
+                f"✅ <b>Berhasil:</b> {success_count}\n"
+                f"❌ <b>Gagal:</b> {error_count}\n"
+                f"📊 <b>Total:</b> {len(jadwal_data['channels'])} channel/group\n"
+                f"⏰ <b>Waktu:</b> {datetime.now(WIB).strftime('%H:%M WIB')}\n"
+                f"🎨 <b>Format:</b> Sama seperti foto contoh{telegraph_info}\n\n"
+                f"<i>🔄 Dikirim bergiliran dengan interval 1 menit!</i>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            )
+            
         except Exception as e:
             logger.error(f"Send now error: {e}")
             await query.answer(f"❌ Gagal kirim: {str(e)}")
@@ -887,6 +1085,7 @@ async def panel_refresh(query, context):
     time_info = jadwal_data["post_time"]
     auto_status = "🟢 AKTIF" if jadwal_data["auto_post_enabled"] else "🔴 NONAKTIF"
     telegraph_status = "🟢 AKTIF" if jadwal_data.get("telegraph_token") else "🔴 NONAKTIF"
+    rules_status = "🟢 SUDAH DISET" if jadwal_data.get("rules_text") else "🔴 BELUM DISET"
     
     today = get_today()
     jadwal_hari_ini = len(jadwal_data["harian"][today])
@@ -900,7 +1099,9 @@ async def panel_refresh(query, context):
         [InlineKeyboardButton("📺 Kelola Channel", callback_data="manage_channels"),
          InlineKeyboardButton("⏰ Set Jam Post", callback_data="set_time")],
         [InlineKeyboardButton("📰 Setup Telegraph", callback_data="setup_telegraph"),
-         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")]
+         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")],
+        [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules"),
+         InlineKeyboardButton("👀 Preview Rules", callback_data="preview_rules")]
     ]
     
     next_post = "Tidak ada" if not jadwal_data["auto_post_enabled"] else f"Bergiliran setiap hari jam {jadwal_data['post_time']}"
@@ -915,9 +1116,10 @@ async def panel_refresh(query, context):
 ⏰ Jam auto post: <b>{time_info} WIB</b>
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
+📜 Rules: <b>{rules_status}</b>
 ⏭️ Posting: <b>{next_post}</b>
 
-<i>💡 Output sama persis seperti foto contoh!</i>"""
+<i>💡 Bot akan auto posting bergiliran sesuai format seperti di contoh!</i>"""
     
     try:
         await query.edit_message_text(
@@ -939,7 +1141,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = update.message.text.strip()
     
-    if waiting_for == 'tambah':
+    if waiting_for == 'set_rules':
+        if not text:
+            await update.message.reply_text("❌ Rules tidak boleh kosong!")
+            return
+        
+        # Simpan rules dengan support HTML
+        jadwal_data["rules_text"] = text
+        save_data()
+        
+        await update.message.reply_text(
+            f"✅ <b>Rules Berhasil Diset!</b>\n\n"
+            f"<b>📜 Preview Rules:</b>\n"
+            f"<blockquote expandable>{format_rules_message()}</blockquote>\n\n"
+            f"<b>✨ Fitur Rules:</b>\n"
+            f"• Command: <code>/rules</code>\n"
+            f"• Anti spam: 20 menit\n"
+            f"• Auto delete: 10 detik\n"
+            f"• Support HTML tags\n\n"
+            f"<i>💡 User sekarang bisa ketik /rules untuk melihat rules!</i>",
+            parse_mode='HTML'
+        )
+    
+    elif waiting_for == 'tambah':
         if "|" not in text:
             await update.message.reply_text(
                 "❌ <b>Format Salah!</b>\n\n"
@@ -1153,7 +1377,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"⏰ <b>Jam lama:</b> {old_time} WIB\n"
                 f"⏰ <b>Jam baru:</b> {text} WIB\n\n"
                 f"<b>🔄 Jadwal Posting Bergiliran:</b>\n"
-                + (("\n".join([f"  • Channel/Group {i+1}: {hour + (minute + i) // 60}:{(minute + i) % 60:02d} WIB" for i in range(len(jadwal_data["channels"]))])) if jadwal_data["channels"] else "  Belum ada channel/group terdaftar") +
+                + (("\n".join([f"  • Channel/Group {i+1}: {cached_format_time(hour + (minute + i) // 60, (minute + i) % 60)} WIB" for i in range(len(jadwal_data["channels"]))])) if jadwal_data["channels"] else "  Belum ada channel/group terdaftar") +
                 f"\n\n<i>💡 Bot akan posting otomatis bergiliran sesuai jam yang sudah diset!</i>\n"
                 f"<i>🌏 Menggunakan timezone WIB (UTC+7)</i>", 
                 parse_mode='HTML'
@@ -1264,12 +1488,13 @@ def main():
     
     # Add handlers
     app.add_handler(CommandHandler("jadwal", jadwal_cmd))
+    app.add_handler(CommandHandler("rules", rules_cmd))
     app.add_handler(CommandHandler("panel", panel_cmd))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    # Setup daily auto post bergiliran jika sudah enabled dengan timezone WIB
-    if jadwal_data.get("auto_post_enabled", False) and jadwal_data.get("channels"):
+    # Setup jobs dengan timezone WIB yang benar
+    if jadwal_data["auto_post_enabled"] and jadwal_data["channels"]:
         try:
             hour, minute = map(int, jadwal_data["post_time"].split(":"))
             # Schedule job untuk setiap channel dengan interval 1 menit
@@ -1287,36 +1512,21 @@ def main():
                     data={'channel': channel, 'index': i}
                 )
             
-            print(f"⏰ Daily auto post restored: {len(jadwal_data['channels'])} channels bergiliran mulai {jadwal_data['post_time']} WIB")
+            print(f"⏰ Auto post jobs scheduled for {len(jadwal_data['channels'])} channels starting at {jadwal_data['post_time']} WIB")
+            
         except Exception as e:
-            logger.error(f"Failed to restore daily auto post: {e}")
-            print(f"⚠️ Failed to restore daily auto post: {e}")
+            logger.error(f"Job scheduling error: {e}")
+            print(f"❌ Error scheduling jobs: {e}")
     
-    print(f"🚀 Bot Started!")
-    print(f"📺 Channels: {len(jadwal_data.get('channels', []))} registered")
-    print(f"⏰ Post Time: {jadwal_data.get('post_time', '06:00')} WIB (bergiliran)") 
-    print(f"🤖 Auto Post: {'ENABLED' if jadwal_data.get('auto_post_enabled') else 'DISABLED'}")
-    print(f"📰 Telegraph: {'ENABLED' if jadwal_data.get('telegraph_token') else 'DISABLED'}")
-    print(f"🔄 Rotation: 1 menit interval antar channel/group")
+    print("🚀 Jadwal Donghua Bot is running...")
+    print(f"📊 Loaded {sum(len(jadwal_data['harian'][d]) for d in jadwal_data['harian'])} harian + {len(jadwal_data['upcoming'])} upcoming")
+    print(f"📺 {len(jadwal_data['channels'])} channels configured for auto posting")
+    print(f"📜 Rules {'configured' if jadwal_data.get('rules_text') else 'not configured'}")
+    print(f"⏰ Auto post: {'enabled' if jadwal_data['auto_post_enabled'] else 'disabled'}")
+    print("📱 Commands available: /jadwal, /rules, /panel (owner only)")
+    print("🔄 Press Ctrl+C to stop")
     
-    try:
-        # Run bot dengan konfigurasi timeout yang lebih baik
-        app.run_polling(
-            drop_pending_updates=True,
-            poll_interval=2.0,
-            timeout=30,
-            read_timeout=15,
-            write_timeout=15,
-            connect_timeout=15,
-            pool_timeout=10
-        )
-    except KeyboardInterrupt:
-        print("\n📴 Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Bot runtime error: {e}")
-        print(f"❌ Bot error: {e}")
-    finally:
-        print("🔄 Bot shutdown complete")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
