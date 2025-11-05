@@ -7,6 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
 from calendar import month_name
+from telegram.request import HTTPXRequest
 import pytz
 import signal
 import sys
@@ -38,6 +39,9 @@ jadwal_data = {
 user_cooldown = {}
 last_jadwal_time = None  # Waktu terakhir jadwal dikirim
 last_rules_time = None  # Waktu terakhir rules dikirim
+
+# Global variable for application
+app = None
 
 # =================== CACHE ===================
 @lru_cache(maxsize=128)
@@ -273,7 +277,7 @@ def format_jadwal_hari_ini():
                 msg += f'[Season {up["season"]}]'
             msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
     else:
-        msg += "<blockquote>Belum ada upcoming donghua dalam waktu dekat</blockquote>\n"
+        msg += "<blockquote>Belum ada donghua dalam waktu dekat</blockquote>\n\n"
     
     # Footer dengan link Telegraph
     if jadwal_data.get("telegraph_url"):
@@ -307,7 +311,7 @@ def format_jadwal_lengkap():
                 msg += f'[Season {up["season"]}]'
             msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
     else:
-        msg += "<blockquote> Belum ada upcoming donghua dalam waktu dekat </blockquote>\n"
+        msg += "<blockquote> Belum ada donghua dalam waktu dekat </blockquote>\n\n"
     
     # Footer dengan link Telegraph
     if jadwal_data.get("telegraph_url"):
@@ -506,9 +510,7 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
 📜 Rules: <b>{rules_status}</b>
-⏭️ Posting: <b>{next_post}</b>
-
-<i>💡 Bot akan auto posting bergiliran sesuai format seperti di contoh!</i>"""
+⏭️ Posting: <b>{next_post}</b>"""
     
     try:
         await update.message.reply_text(
@@ -621,8 +623,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Jam 20:00 → Post ke channel/group pertama\n"
             "• Jam 20:01 → Post ke channel/group kedua\n"
             "• Jam 20:02 → Post ke channel/group ketiga\n"
-            "• Dan seterusnya setiap 1 menit!\n\n"
-            "<i>💡 Output akan sama seperti foto contoh!</i>",
+            "• Dan seterusnya setiap 1 menit!\n\n",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="manage_channels")]])
         )
@@ -678,8 +679,9 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>📰 STATUS TELEGRAPH</b>\n\n"
                 f"🔑 <b>Token:</b> Tersedia ✅\n"
                 f"📄 <b>Halaman:</b> <a href='{telegraph_info}'>Lihat</a>\n\n"
-                "<b>Pilihan:</b>",
+                "<i>Silahkan pilih tombol di bawah ini:</i>",
                 parse_mode='HTML',
+                disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔄 Update Manual", callback_data="update_telegraph")],
                     [InlineKeyboardButton("🆕 Buat Token Baru", callback_data="create_telegraph")],
@@ -884,8 +886,9 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 f"<b>📢 PREVIEW HARI INI</b>\n\n"
                 f"<i>Ini yang akan dipost otomatis:</i>\n\n"
-                f"<blockquote>{msg}</blockquote>",
+                f"<blockquote><b>{msg}</b></blockquote>",
                 parse_mode='HTML',
+                disable_web_page_preview=True,  # TAMBAHKAN INI
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🚀 Send Now ke Semua", callback_data="send_now")],
                     [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
@@ -1016,7 +1019,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     msg += f"   {i}. {anime}\n"
                 total_harian += len(jadwal_data["harian"][hari])
             else:
-                msg += "   <i>- Libur donghua</i>\n"
+                msg += "   <i>- Jadwal belum di isi</i>\n"
             msg += "\n"
         
         msg += f"<b>🔮 Upcoming Donghua ({len(jadwal_data['upcoming'])}):</b>\n"
@@ -1037,6 +1040,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             msg,
             parse_mode='HTML',
+            disable_web_page_preview= True,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
         )
             
@@ -1117,9 +1121,7 @@ async def panel_refresh(query, context):
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
 📜 Rules: <b>{rules_status}</b>
-⏭️ Posting: <b>{next_post}</b>
-
-<i>💡 Bot akan auto posting bergiliran sesuai format seperti di contoh!</i>"""
+⏭️ Posting: <b>{next_post}</b>"""
     
     try:
         await query.edit_message_text(
@@ -1441,7 +1443,7 @@ async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
                     f"📅 <b>Hari:</b> {today}\n"
                     f"📝 <b>Jadwal:</b> {status}\n"
                     f"⏰ <b>Waktu Mulai:</b> {now_wib.strftime('%H:%M WIB')}\n"
-                    f"🎨 <b>Format:</b> Sama seperti foto contoh{telegraph_info}\n"
+                    f"🎨 <b>Format:</b> contoh{telegraph_info}\n"
                     f"📊 <b>Target:</b> {len(jadwal_data['channels'])} channel/group bergiliran\n"
                     f"🔄 <b>Interval:</b> 1 menit per channel/group",
                     parse_mode='HTML'
@@ -1466,25 +1468,68 @@ async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
                 logger.error(f"Error notification failed: {notif_error}")
 
 # =================== SIGNAL HANDLER UNTUK GRACEFUL SHUTDOWN ===================
-def signal_handler(signum, frame):
+async def shutdown_handler(signum, loop):
     """Handle shutdown signals gracefully"""
     print(f"\n📴 Received signal {signum}. Shutting down gracefully...")
-    sys.exit(0)
+    
+    # Cleanup tasks
+    tasks = [task for task in asyncio.all_tasks(loop) if task is not asyncio.current_task()]
+    
+    if tasks:
+        print(f"🔄 Cancelling {len(tasks)} outstanding tasks...")
+        for task in tasks:
+            task.cancel()
+        
+        # Wait for tasks to complete with timeout
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), 
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            print("⚠️ Some tasks did not complete in time")
+    
+    # Stop the application properly
+    if app and app.running:
+        print("🛑 Stopping application...")
+        try:
+            await app.stop()
+            await app.shutdown()
+        except Exception as e:
+            logger.error(f"Error during app shutdown: {e}")
+    
+    print("✅ Bot stopped gracefully")
+    loop.stop()
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    print(f"\n📴 Received signal {signum}. Initiating graceful shutdown...")
+    if app and app.running:
+        asyncio.create_task(shutdown_handler(signum, asyncio.get_event_loop()))
+    else:
+        sys.exit(0)
 
 # =================== MAIN FUNCTION ===================
 def main():
+    global app
+    
     # Kill existing bot instances to prevent conflicts
     print("🔍 Checking for existing bot instances...")
     kill_existing_bots()
     
     load_data()
     
-    # Setup signal handlers untuk graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Create custom request with proper timeout settings
+    request = HTTPXRequest(
+        connection_pool_size=1,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        connect_timeout=30.0,
+        pool_timeout=30.0
+    )
     
-    # Konfigurasi Application dengan timeout dan retry settings
-    app = Application.builder().token(BOT_TOKEN).build()
+    # Konfigurasi Application dengan request object yang diperbaiki
+    app = Application.builder().token(BOT_TOKEN).request(request).build()
     
     # Add handlers
     app.add_handler(CommandHandler("jadwal", jadwal_cmd))
@@ -1526,7 +1571,27 @@ def main():
     print("📱 Commands available: /jadwal, /rules, /panel (owner only)")
     print("🔄 Press Ctrl+C to stop")
     
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # Run dengan polling sederhana tanpa signal handling yang rumit
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            close_loop=False,  # PENTING: Biarkan loop terbuka
+            stop_signals=None  # Disable default signal handlers
+        )
+    except KeyboardInterrupt:
+        print("\n📴 Shutting down...")
+        try:
+            app.stop()
+        except:
+            pass
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    finally:
+        print("🔚 Bot stopped")
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n👋 Goodbye!")
+        os._exit(0)  # Force exit tanpa cleanup yang rumit

@@ -1,14 +1,9 @@
 {
   "harian": {
-    "Senin": [
-      "Purple River Season 2"
-    ],
+    "Senin": [],
     "Selasa": [],
     "Rabu": [
-      "Twin Martial Souls",
-      "Soul Land 2",
-      "Twin Martial Souls 2",
-      "Twin Martial Souls 3"
+      "Twin Martial Souls"
     ],
     "Kamis": [],
     "Jumat": [],
@@ -21,7 +16,7 @@
     "-1002652503756"
   ],
   "post_time": "16:59",
-  "auto_post_enabled": true,
+  "auto_post_enabled": false,
   "telegraph_token": "42403670639569da0a30f5ded004e40f910af96f5bd021f70a7d97b8bc6f",
   "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-13",
   "rules_text": "<b>📜 RULES GRUP</b>\n\n1. <b>Dilarang spam</b>\n2. <i>Sopan dan santun</i>\n3. <u>No 18+ content</u>"
