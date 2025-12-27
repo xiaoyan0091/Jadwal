@@ -7,16 +7,17 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
 from calendar import month_name
-from telegram.request import HTTPXRequest
 import pytz
 import signal
 import sys
 import os
 from functools import lru_cache
+import math
 
 # =================== CONFIG ===================
-BOT_TOKEN = "7240322775:AAFw4mmT7NpDed38TX6jSLIYjxRLmM4fsW8"  
+BOT_TOKEN = "7240322775:AAHMZzD42Yb1VlBTe4WyGGvfzpd9f0yKUVo"  
 OWNER_ID = 6444305696               
+MEDIA_CHANNEL_ID = "@your_media_storage"  # Channel untuk storage media (opsional)
 
 # =================== SETUP ===================
 logging.basicConfig(level=logging.WARNING)
@@ -34,7 +35,16 @@ jadwal_data = {
     "auto_post_enabled": False,
     "telegraph_token": "",
     "telegraph_url": "",
-    "rules_text": ""  # Rules text dengan support HTML
+    "rules_text": "",  # Rules text dengan support HTML
+    "media_jadwal": {  # Media untuk setiap hari
+        "Senin": {"type": "", "url": ""},
+        "Selasa": {"type": "", "url": ""},
+        "Rabu": {"type": "", "url": ""},
+        "Kamis": {"type": "", "url": ""},
+        "Jumat": {"type": "", "url": ""},
+        "Sabtu": {"type": "", "url": ""},
+        "Minggu": {"type": "", "url": ""}
+    }
 }
 user_cooldown = {}
 last_jadwal_time = None  # Waktu terakhir jadwal dikirim
@@ -163,7 +173,6 @@ def generate_telegraph_content():
     
     return content
 
-
 def update_telegraph():
     """Update halaman Telegraph dengan jadwal terbaru"""
     if not jadwal_data.get("telegraph_token"):
@@ -193,33 +202,6 @@ def update_telegraph():
     
     return False
 
-# =================== KILL EXISTING BOT INSTANCES ===================
-def kill_existing_bots():
-    """Kill any existing bot processes to prevent conflict"""
-    try:
-        current_pid = os.getpid()
-        
-        # Get list of Python processes
-        import subprocess
-        result = subprocess.run(['pgrep', '-f', 'jadwalbot.py'], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            pids = result.stdout.strip().split('\n')
-            for pid in pids:
-                if pid and int(pid) != current_pid:
-                    try:
-                        os.kill(int(pid), signal.SIGTERM)
-                        print(f"🔫 Killed existing bot process: {pid}")
-                    except:
-                        pass
-        
-        # Wait a moment for processes to terminate
-        import time
-        time.sleep(2)
-        
-    except Exception as e:
-        logger.error(f"Error killing existing bots: {e}")
-
 # =================== FUNGSI HELPER ===================
 def save_data():
     try:
@@ -241,16 +223,49 @@ def load_data():
                 jadwal_data["channels"].append(jadwal_data["channel_id"])
                 del jadwal_data["channel_id"]
                 save_data()
-            # Ensure rules_text exists
+            # Migrate old foto/video to media_jadwal
+            if "jadwal_foto" in jadwal_data or "jadwal_video" in jadwal_data:
+                if not jadwal_data.get("media_jadwal"):
+                    jadwal_data["media_jadwal"] = {
+                        "Senin": {"type": "", "url": ""},
+                        "Selasa": {"type": "", "url": ""},
+                        "Rabu": {"type": "", "url": ""},
+                        "Kamis": {"type": "", "url": ""},
+                        "Jumat": {"type": "", "url": ""},
+                        "Sabtu": {"type": "", "url": ""},
+                        "Minggu": {"type": "", "url": ""}
+                    }
+                # Hapus old fields
+                if "jadwal_foto" in jadwal_data:
+                    del jadwal_data["jadwal_foto"]
+                if "jadwal_video" in jadwal_data:
+                    del jadwal_data["jadwal_video"]
+                save_data()
+            # Ensure all fields exist
             if "rules_text" not in jadwal_data:
                 jadwal_data["rules_text"] = ""
-                save_data()
+            if "media_jadwal" not in jadwal_data:
+                jadwal_data["media_jadwal"] = {
+                    "Senin": {"type": "", "url": ""},
+                    "Selasa": {"type": "", "url": ""},
+                    "Rabu": {"type": "", "url": ""},
+                    "Kamis": {"type": "", "url": ""},
+                    "Jumat": {"type": "", "url": ""},
+                    "Sabtu": {"type": "", "url": ""},
+                    "Minggu": {"type": "", "url": ""}
+                }
+            save_data()
     except Exception as e:
         logger.error(f"Load data error: {e}")
         save_data()
 
 def get_today():
     return cached_get_today()
+
+def get_media_for_today():
+    """Ambil media untuk hari ini"""
+    today = get_today()
+    return jadwal_data.get("media_jadwal", {}).get(today, {"type": "", "url": ""})
 
 def format_jadwal_hari_ini():
     """Format jadwal PERSIS seperti di foto contoh"""
@@ -328,11 +343,158 @@ def format_rules_message():
     
     return f"{jadwal_data['rules_text']}\n\n#rulesbot"
 
+async def send_jadwal_with_media(chat_id, context, message_text):
+    """Send jadwal dengan foto/video/GIF sesuai hari"""
+    try:
+        # Ambil media untuk hari ini
+        today_media = get_media_for_today()
+        
+        if today_media["url"] and today_media["type"]:
+            if today_media["type"] == "video":
+                # Send as video/animation
+                await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=today_media["url"],
+                    caption=message_text,
+                    parse_mode='HTML',
+                    has_spoiler=False
+                )
+            elif today_media["type"] == "photo":
+                # Send as photo
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=today_media["url"],
+                    caption=message_text,
+                    parse_mode='HTML'
+                )
+        else:
+            # Send as text only
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+    except Exception as e:
+        logger.error(f"Send media error: {e}")
+        # Fallback to text
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=message_text,
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+        except Exception as fallback_error:
+            logger.error(f"Send text fallback error: {fallback_error}")
+
+# =================== PAGINATION FUNCTIONS ===================
+def get_all_schedule_items():
+    """Dapatkan semua item jadwal (harian + upcoming) dengan indexing"""
+    items = []
+    
+    # Jadwal harian
+    for hari in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
+        for anime in jadwal_data["harian"][hari]:
+            items.append({
+                'type': 'harian',
+                'text': f"{anime} ({hari})",
+                'hari': hari,
+                'anime': anime,
+                'hash': hash(anime) % 1000
+            })
+    
+    # Upcoming
+    for i, up in enumerate(jadwal_data["upcoming"]):
+        items.append({
+            'type': 'upcoming',
+            'text': f"{up['judul']} (Upcoming)",
+            'index': i,
+            'data': up
+        })
+    
+    return items
+
+def generate_delete_keyboard(page=1, items_per_page=10):
+    """Generate keyboard dengan pagination 2 kolom, 5 baris"""
+    all_items = get_all_schedule_items()
+    total_items = len(all_items)
+    total_pages = math.ceil(total_items / items_per_page)
+    
+    if total_pages == 0:
+        return [[InlineKeyboardButton("Belum ada jadwal", callback_data="back")], [InlineKeyboardButton("Kembali", callback_data="back")]]
+    
+    # Pastikan page dalam range
+    page = max(1, min(page, total_pages))
+    
+    start_index = (page - 1) * items_per_page
+    end_index = min(start_index + items_per_page, total_items)
+    current_items = all_items[start_index:end_index]
+    
+    keyboard = []
+    
+    # Items dalam 2 kolom, maksimal 5 baris (10 items per halaman)
+    for i in range(0, len(current_items), 2):
+        row = []
+        for j in range(2):
+            if i + j < len(current_items):
+                item = current_items[i + j]
+                # Truncate text jika terlalu panjang
+                display_text = item['text'][:20] + "..." if len(item['text']) > 20 else item['text']
+                
+                if item['type'] == 'harian':
+                    callback_data = f"del_h_{item['hari']}_{item['hash']}"
+                else:
+                    callback_data = f"del_u_{item['index']}"
+                
+                row.append(InlineKeyboardButton(f"❌ {display_text}", callback_data=callback_data))
+        
+        if row:
+            keyboard.append(row)
+    
+    # Pagination controls jika lebih dari 1 halaman
+    if total_pages > 1:
+        pagination_row = []
+        
+        # Previous button
+        if page > 1:
+            pagination_row.append(InlineKeyboardButton("◀️", callback_data=f"del_page_{page-1}"))
+        
+        # Page numbers (maksimal 5 angka)
+        start_page = max(1, page - 2)
+        end_page = min(total_pages, start_page + 4)
+        
+        # Adjust start_page jika end_page sudah maksimal
+        if end_page - start_page < 4:
+            start_page = max(1, end_page - 4)
+        
+        for p in range(start_page, end_page + 1):
+            if p == page:
+                pagination_row.append(InlineKeyboardButton(f"• {p} •", callback_data=f"del_page_{p}"))
+            else:
+                pagination_row.append(InlineKeyboardButton(str(p), callback_data=f"del_page_{p}"))
+        
+        # Next button
+        if page < total_pages:
+            pagination_row.append(InlineKeyboardButton("▶️", callback_data=f"del_page_{page+1}"))
+        
+        keyboard.append(pagination_row)
+    
+    # Kembali button
+    keyboard.append([InlineKeyboardButton("Kembali", callback_data="back")])
+    
+    return keyboard
+
 # =================== COMMAND HANDLERS ===================
 async def jadwal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_jadwal_time
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     now = datetime.now(WIB)
+    
+    # Hanya OWNER yang bisa di PM bot
+    if chat_id > 0 and user_id != OWNER_ID:  # chat_id > 0 = private chat
+        return
     
     # Owner tidak perlu anti spam
     if user_id != OWNER_ID:
@@ -374,31 +536,33 @@ Command Jadwal dapat diakses {minutes_left} menit lagi. Jadwal sudah pernah diki
     else:
         user_cooldown[user_id] = [now]
     
-    # Tunggu 2 detik lalu hapus pesan command
-    await asyncio.sleep(2)
-    try: 
-        await update.message.delete()
-    except Exception as e:
-        logger.error(f"Delete message error: {e}")
+    # Tunggu 2 detik lalu hapus pesan command (hanya di group)
+    if chat_id < 0:  # Group chat
+        await asyncio.sleep(2)
+        try: 
+            await update.message.delete()
+        except Exception as e:
+            logger.error(f"Delete message error: {e}")
     
     # Update waktu terakhir jadwal dikirim
     last_jadwal_time = now
     
-    # Kirim jadwal dengan format seperti foto
+    # Kirim jadwal dengan foto/video
     try:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=format_jadwal_lengkap(),
-            parse_mode='HTML',
-            disable_web_page_preview=True
-        )
+        message_text = format_jadwal_lengkap()
+        await send_jadwal_with_media(chat_id, context, message_text)
     except Exception as e:
-        logger.error(f"Send message error: {e}")
+        logger.error(f"Send jadwal error: {e}")
 
 async def rules_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_rules_time
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     now = datetime.now(WIB)
+    
+    # Hanya OWNER yang bisa di PM bot
+    if chat_id > 0 and user_id != OWNER_ID:  # chat_id > 0 = private chat
+        return
     
     # Owner tidak perlu anti spam
     if user_id != OWNER_ID:
@@ -440,12 +604,13 @@ Command Rules dapat diakses {minutes_left} menit lagi. Rules sudah pernah dikiri
     else:
         user_cooldown[user_id] = [now]
     
-    # Tunggu 2 detik lalu hapus pesan command
-    await asyncio.sleep(2)
-    try: 
-        await update.message.delete()
-    except Exception as e:
-        logger.error(f"Delete message error: {e}")
+    # Tunggu 2 detik lalu hapus pesan command (hanya di group)
+    if chat_id < 0:  # Group chat
+        await asyncio.sleep(2)
+        try: 
+            await update.message.delete()
+        except Exception as e:
+            logger.error(f"Delete message error: {e}")
     
     # Update waktu terakhir rules dikirim
     last_rules_time = now
@@ -459,13 +624,14 @@ Command Rules dapat diakses {minutes_left} menit lagi. Rules sudah pernah dikiri
             disable_web_page_preview=True
         )
         
-        # Hapus pesan rules setelah 10 detik
-        await asyncio.sleep(10)
-        try:
-            await rules_msg.delete()
-        except Exception as e:
-            logger.error(f"Delete rules message error: {e}")
-            
+        # Hapus pesan rules setelah 10 detik (hanya di group)
+        if chat_id < 0:  # Group chat
+            await asyncio.sleep(10)
+            try:
+                await rules_msg.delete()
+            except Exception as e:
+                logger.error(f"Delete rules message error: {e}")
+                
     except Exception as e:
         logger.error(f"Send rules message error: {e}")
 
@@ -480,21 +646,26 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegraph_status = "🟢 AKTIF" if jadwal_data.get("telegraph_token") else "🔴 NONAKTIF"
     rules_status = "🟢 SUDAH DISET" if jadwal_data.get("rules_text") else "🔴 BELUM DISET"
     
+    # Hitung media status
+    media_count = sum(1 for hari in jadwal_data["media_jadwal"] if jadwal_data["media_jadwal"][hari]["url"])
+    media_status = f"🟢 {media_count}/7 HARI" if media_count > 0 else "🔴 BELUM DISET"
+    
     today = get_today()
     jadwal_hari_ini = len(jadwal_data["harian"][today])
     total_minggu = sum(len(jadwal_data["harian"][hari]) for hari in jadwal_data["harian"])
     
     keyboard = [
-        [InlineKeyboardButton("➕ Tambah Jadwal", callback_data="tambah"),
-         InlineKeyboardButton("🗑️ Hapus Jadwal", callback_data="hapus")],
-        [InlineKeyboardButton("📋 Lihat Semua", callback_data="lihat"),
-         InlineKeyboardButton("📢 Preview Hari Ini", callback_data="preview")],
-        [InlineKeyboardButton("📺 Kelola Channel", callback_data="manage_channels"),
-         InlineKeyboardButton("⏰ Set Jam Post", callback_data="set_time")],
-        [InlineKeyboardButton("📰 Setup Telegraph", callback_data="setup_telegraph"),
-         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")],
-        [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules"),
-         InlineKeyboardButton("👀 Preview Rules", callback_data="preview_rules")]
+        [InlineKeyboardButton("Tambah Jadwal", callback_data="tambah"),
+         InlineKeyboardButton("Hapus Jadwal", callback_data="hapus")],
+        [InlineKeyboardButton("Lihat Semua", callback_data="lihat"),
+         InlineKeyboardButton("Preview Hari Ini", callback_data="preview")],
+        [InlineKeyboardButton("Kelola Channel", callback_data="manage_channels"),
+         InlineKeyboardButton("Set Jam Post", callback_data="set_time")],
+        [InlineKeyboardButton("Setup Telegraph", callback_data="setup_telegraph"),
+         InlineKeyboardButton("Toggle Auto Post", callback_data="toggle_auto")],
+        [InlineKeyboardButton("Set Rules", callback_data="set_rules"),
+         InlineKeyboardButton("Preview Rules", callback_data="preview_rules")],
+        [InlineKeyboardButton("Set Media Jadwal", callback_data="set_media")]
     ]
     
     next_post = "Tidak ada" if not jadwal_data["auto_post_enabled"] else f"Bergiliran setiap hari jam {jadwal_data['post_time']}"
@@ -510,6 +681,7 @@ async def panel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
 📜 Rules: <b>{rules_status}</b>
+🎨 Media Jadwal: <b>{media_status}</b>
 ⏭️ Posting: <b>{next_post}</b>"""
     
     try:
@@ -532,7 +704,120 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = query.data
     
-    if data == "set_rules":
+    if data == "set_media":
+        keyboard = []
+        
+        # Buat button dalam 2 kolom untuk hari-hari
+        days = [
+            ("Senin", ""), ("Selasa", ""), 
+            ("Rabu", ""), ("Kamis", ""), 
+            ("Jumat", ""), ("Sabtu", ""), 
+            ("Minggu", "")
+        ]
+        
+        # Susun button 2x2 untuk hari (2 kolom per baris)
+        for i in range(0, len(days), 2):
+            row = []
+            for j in range(2):
+                if i + j < len(days):
+                    hari, emoji = days[i + j]
+                    media_info = jadwal_data["media_jadwal"][hari]
+                    if media_info["url"]:
+                        status = "📸" if media_info["type"] == "photo" else "🎬"
+                    else:
+                        status = " "
+                    
+                    row.append(InlineKeyboardButton(
+                        f"{emoji} {hari} - {status}", 
+                        callback_data=f"media_{hari}"
+                    ))
+            keyboard.append(row)
+        
+        # Button kembali
+        keyboard.append([InlineKeyboardButton("🔙 Kembali", callback_data="back")])
+        
+        await query.edit_message_text(
+            "<b>🎨 SET MEDIA JADWAL</b>\n\n"
+            "Pilih hari untuk mengatur media jadwal:\n\n"
+            "<b>📝 Fitur Media Jadwal:</b>\n"
+            "• Support foto, video, dan GIF\n"
+            "• Setiap hari bisa berbeda media\n"
+            "• Auto digunakan saat posting jadwal\n"
+            "• Caption berisi jadwal lengkap\n\n"
+            "<i>💡 Klik hari untuk mengatur media!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    elif data.startswith("media_"):
+        hari = data.replace("media_", "")
+        media_info = jadwal_data["media_jadwal"][hari]
+        
+        keyboard = [
+            [InlineKeyboardButton("Upload Media", callback_data=f"upload_{hari}")],
+        ]
+        
+        if media_info["url"]:
+            keyboard.append([InlineKeyboardButton("Hapus Media", callback_data=f"delete_{hari}")])
+        
+        keyboard.append([InlineKeyboardButton("Kembali", callback_data="set_media")])
+        
+        status_text = ""
+        if media_info["url"]:
+            media_type = "Foto" if media_info["type"] == "photo" else "Video/GIF"
+            status_text = f"\n\n<b>📸 Media Saat Ini:</b>\n🎨 <b>Type:</b> {media_type}\n🔗 <b>URL:</b> <code>{media_info['url'][:100]}</code>"
+        else:
+            status_text = "\n\n❌ <b>Belum ada media untuk hari ini</b>"
+        
+        await query.edit_message_text(
+            f"<b>🎨 MEDIA JADWAL - {hari.upper()}</b>{status_text}\n\n"
+            "<b>📝 Cara Upload:</b>\n"
+            "• Klik 'Upload Media'\n"
+            "• Kirim foto, video, atau GIF\n"
+            "• Bot akan otomatis detect type\n\n"
+            "<i>💡 Media ini akan digunakan saat posting jadwal hari {hari}!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    elif data.startswith("upload_"):
+        hari = data.replace("upload_", "")
+        
+        await query.edit_message_text(
+            f"<b>📤 UPLOAD MEDIA - {hari.upper()}</b>\n\n"
+            "Kirim media untuk hari ini:\n\n"
+            "<b>📸 Support Format:</b>\n"
+            "• Foto: JPG, PNG, WEBP\n"
+            "• Video: MP4, MOV, AVI\n"
+            "• GIF: Animated GIF\n\n"
+            "<b>📝 Cara Upload:</b>\n"
+            "1️⃣ Kirim foto/video/GIF langsung\n"
+            "2️⃣ Atau forward dari chat lain\n"
+            "3️⃣ Bot akan otomatis simpan\n\n"
+            "<b>🔗 Atau kirim URL media:</b>\n"
+            "<code>https://example.com/media.jpg</code>\n\n"
+            "<i>💡 Media akan otomatis terdetect type nya!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data=f"media_{hari}")]])
+        )
+        context.user_data['waiting_media'] = hari
+    
+    elif data.startswith("delete_"):
+        hari = data.replace("delete_", "")
+        
+        jadwal_data["media_jadwal"][hari] = {"type": "", "url": ""}
+        save_data()
+        
+        await query.edit_message_text(
+            f"<b>✅ MEDIA {hari.upper()} BERHASIL DIHAPUS!</b>\n\n"
+            f"🗑️ <b>Status:</b> Media untuk hari {hari} telah dihapus\n"
+            f"📝 <b>Mode:</b> Text only untuk hari {hari}\n\n"
+            f"<i>💡 Jadwal hari {hari} sekarang akan dikirim tanpa media!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="set_media")]])
+        )
+    
+    elif data == "set_rules":
         await query.edit_message_text(
             "<b>📜 SET RULES GROUP</b>\n\n"
             "Kirim teks rules yang akan ditampilkan saat user ketik <code>/rules</code>\n\n"
@@ -552,7 +837,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<i>💡 Rules akan otomatis terhapus setelah 10 detik!</i>\n"
             "<i>🔒 Sistem anti spam 20 menit seperti jadwal!</i>",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
         )
         context.user_data['waiting_input'] = 'set_rules'
     
@@ -564,7 +849,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<blockquote >{format_rules_message()}</blockquote>\n\n"
                 f"<i>💡 Rules akan otomatis terhapus setelah 10 detik!</i>",
                 parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
             )
         else:
             await query.edit_message_text(
@@ -573,8 +858,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Klik 'Set Rules' untuk mengatur rules group.",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Set Rules", callback_data="set_rules")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -584,8 +869,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, channel in enumerate(jadwal_data["channels"]):
                 keyboard.append([InlineKeyboardButton(f"❌ {channel}", callback_data=f"del_ch_{i}")])
             
-            keyboard.append([InlineKeyboardButton("➕ Tambah Channel/Group", callback_data="add_channel")])
-            keyboard.append([InlineKeyboardButton("◀️ Kembali", callback_data="back")])
+            keyboard.append([InlineKeyboardButton("Tambah Channel/Group", callback_data="add_channel")])
+            keyboard.append([InlineKeyboardButton("Kembali", callback_data="back")])
             
             await query.edit_message_text(
                 f"<b>📺 KELOLA CHANNEL/GROUP ({len(jadwal_data['channels'])})</b>\n\n"
@@ -598,12 +883,12 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text(
                 "<b>📺 KELOLA CHANNEL/GROUP</b>\n\n"
-                "<b>❌ Belum ada channel/group terdaftar</b>\n\n"
+                "❌ Belum ada channel/group terdaftar</b>\n\n"
                 "<i>💡 Tambahkan channel/group untuk auto posting bergiliran!</i>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ Tambah Channel/Group", callback_data="add_channel")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Tambah Channel/Group", callback_data="add_channel")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -625,7 +910,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Jam 20:02 → Post ke channel/group ketiga\n"
             "• Dan seterusnya setiap 1 menit!\n\n",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="manage_channels")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="manage_channels")]])
         )
         context.user_data['waiting_input'] = 'add_channel'
     
@@ -648,9 +933,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, channel in enumerate(jadwal_data["channels"]):
                 keyboard.append([InlineKeyboardButton(f"❌ {channel}", callback_data=f"del_ch_{i}")])
             
-            keyboard.append([InlineKeyboardButton("➕ Tambah Channel/Group", callback_data="add_channel")])
-            keyboard.append([InlineKeyboardButton("◀️ Kembali", callback_data="back")])
-            
+            keyboard.append([InlineKeyboardButton("Tambah Channel/Group", callback_data="add_channel")])
+            keyboard.append([InlineKeyboardButton("Kembali", callback_data="back")])
             await query.edit_message_text(
                 f"<b>📺 KELOLA CHANNEL/GROUP ({len(jadwal_data['channels'])})</b>\n\n"
                 f"<b>✅ Terdaftar:</b>\n" + 
@@ -666,8 +950,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<i>💡 Tambahkan channel/group untuk auto posting bergiliran!</i>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("➕ Tambah Channel/Group", callback_data="add_channel")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Tambah Channel/Group", callback_data="add_channel")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -683,9 +967,9 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='HTML',
                 disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Update Manual", callback_data="update_telegraph")],
-                    [InlineKeyboardButton("🆕 Buat Token Baru", callback_data="create_telegraph")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Update Manual", callback_data="update_telegraph")],
+                    [InlineKeyboardButton("Buat Token Baru", callback_data="create_telegraph")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
         else:
@@ -700,8 +984,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Klik tombol di bawah untuk membuat akun Telegraph otomatis:",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🆕 Buat Akun Telegraph", callback_data="create_telegraph")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Buat Akun Telegraph", callback_data="create_telegraph")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -727,7 +1011,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"<i>💡 Sekarang link 'Jadwal Donghua Semua Hari' akan mengarah ke Telegraph!</i>",
                     parse_mode='HTML',
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                        [InlineKeyboardButton("Kembali", callback_data="back")]
                     ])
                 )
             else:
@@ -736,8 +1020,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Token tersimpan, coba update manual:",
                     parse_mode='HTML',
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔄 Coba Update", callback_data="update_telegraph")],
-                        [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                        [InlineKeyboardButton("Coba Update", callback_data="update_telegraph")],
+                        [InlineKeyboardButton("Kembali", callback_data="back")]
                     ])
                 )
         else:
@@ -749,8 +1033,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Silakan coba lagi nanti.",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Coba Lagi", callback_data="create_telegraph")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Coba Lagi", callback_data="create_telegraph")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -773,7 +1057,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<i>💡 Semua jadwal terbaru sudah masuk Telegraph!</i>",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
         else:
@@ -786,8 +1070,8 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Coba buat token baru:",
                 parse_mode='HTML',
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🆕 Buat Token Baru", callback_data="create_telegraph")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Buat Token Baru", callback_data="create_telegraph")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
     
@@ -804,7 +1088,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Dan seterusnya setiap 1 menit!\n\n"
             "<i>🌏 Menggunakan timezone WIB (UTC+7)</i>",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
         )
         context.user_data['waiting_input'] = 'time'
     
@@ -857,7 +1141,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             status_msg + "\n\n<i>💡 Status disimpan otomatis!</i>",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
         )
     
     elif data == "tambah":
@@ -876,7 +1160,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<i>💡 Jadwal harian akan muncul setiap hari sesuai hari yang dipilih!</i>\n"
             "<i>🔮 Upcoming akan muncul di blockquote hijau seperti contoh!</i>",
             parse_mode='HTML',
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
         )
         context.user_data['waiting_input'] = 'tambah'
     
@@ -888,10 +1172,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<i>Ini yang akan dipost otomatis:</i>\n\n"
                 f"<blockquote><b>{msg}</b></blockquote>",
                 parse_mode='HTML',
-                disable_web_page_preview=True,  # TAMBAHKAN INI
+                disable_web_page_preview=True,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🚀 Send Now ke Semua", callback_data="send_now")],
-                    [InlineKeyboardButton("◀️ Kembali", callback_data="back")]
+                    [InlineKeyboardButton("Send Now ke Semua", callback_data="send_now")],
+                    [InlineKeyboardButton("Kembali", callback_data="back")]
                 ])
             )
         except Exception as e:
@@ -899,7 +1183,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 "<b>❌ Error Preview</b>\n\nGagal generate preview jadwal.",
                 parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
             )
     
     elif data == "send_now":
@@ -930,12 +1214,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if i > 0:  # Delay untuk channel kedua dan seterusnya
                         await asyncio.sleep(60)  # 1 menit delay
                     
-                    await context.bot.send_message(
-                        chat_id=channel,
-                        text=message,
-                        parse_mode='HTML',
-                        disable_web_page_preview=True
-                    )
+                    await send_jadwal_with_media(channel, context, message)
                     success_count += 1
                     
                     # Update progress
@@ -955,6 +1234,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Final result
             telegraph_info = " + Telegraph updated" if jadwal_data.get("telegraph_token") else ""
+            today_media = get_media_for_today()
+            media_info = ""
+            if today_media["url"]:
+                media_info = f" + {today_media['type'].title()}"
             
             await query.edit_message_text(
                 f"<b>🎯 SEND NOW SELESAI!</b>\n\n"
@@ -962,10 +1245,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"❌ <b>Gagal:</b> {error_count}\n"
                 f"📊 <b>Total:</b> {len(jadwal_data['channels'])} channel/group\n"
                 f"⏰ <b>Waktu:</b> {datetime.now(WIB).strftime('%H:%M WIB')}\n"
-                f"🎨 <b>Format:</b> Sama seperti foto contoh{telegraph_info}\n\n"
+                f"🎨 <b>Format:</b> Caption dengan media{media_info}{telegraph_info}\n\n"
                 f"<i>🔄 Dikirim bergiliran dengan interval 1 menit!</i>",
                 parse_mode='HTML',
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
             )
             
         except Exception as e:
@@ -973,35 +1256,47 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer(f"❌ Gagal kirim: {str(e)}")
         
     elif data == "hapus":
-        keyboard = []
+        # Generate halaman 1 dengan pagination
+        all_items = get_all_schedule_items()
+        total_items = len(all_items)
         
-        # List jadwal harian
-        for hari in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
-            if jadwal_data["harian"][hari]:
-                for anime in jadwal_data["harian"][hari]:
-                    short_name = anime[:20] if len(anime) > 20 else anime
-                    keyboard.append([InlineKeyboardButton(
-                        f"❌ {short_name} ({hari})", 
-                        callback_data=f"del_h_{hari}_{hash(anime) % 1000}"
-                    )])
+        if total_items == 0:
+            await query.edit_message_text(
+                "<b>🗑️ HAPUS JADWAL</b>\n\n"
+                "❌ <b>Belum ada jadwal!</b>\n\n"
+                "<i>Tambahkan jadwal terlebih dahulu.</i>",
+                parse_mode='HTML',
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
+            )
+            return
         
-        # List upcoming
-        for i, up in enumerate(jadwal_data["upcoming"]):
-            short_name = up['judul'][:20] if len(up['judul']) > 20 else up['judul']
-            keyboard.append([InlineKeyboardButton(
-                f"❌ {short_name} (Upcoming)", 
-                callback_data=f"del_u_{i}"
-            )])
-        
-        if not keyboard:
-            keyboard.append([InlineKeyboardButton("📝 Belum ada jadwal", callback_data="back")])
-            
-        keyboard.append([InlineKeyboardButton("◀️ Kembali", callback_data="back")])
+        keyboard = generate_delete_keyboard(page=1)
+        total_pages = math.ceil(total_items / 10)
         
         await query.edit_message_text(
-            "<b>🗑️ HAPUS JADWAL</b>\n\n"
-            "<i>Pilih jadwal yang ingin dihapus:</i>\n"
-            "<i>📰 Telegraph akan otomatis terupdate setelah dihapus!</i>",
+            f"<b>🗑️ HAPUS JADWAL</b>\n\n"
+            f"📊 <b>Total:</b> {total_items} jadwal\n"
+            f"📄 <b>Halaman:</b> 1 dari {total_pages}\n\n"
+            f"<i>Pilih jadwal yang ingin dihapus:</i>\n"
+            f"<i>📰 Telegraph akan otomatis terupdate setelah dihapus!</i>",
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    elif data.startswith("del_page_"):
+        page = int(data.replace("del_page_", ""))
+        all_items = get_all_schedule_items()
+        total_items = len(all_items)
+        total_pages = math.ceil(total_items / 10)
+        
+        keyboard = generate_delete_keyboard(page=page)
+        
+        await query.edit_message_text(
+            f"<b>🗑️ HAPUS JADWAL</b>\n\n"
+            f"📊 <b>Total:</b> {total_items} jadwal\n"
+            f"📄 <b>Halaman:</b> {page} dari {total_pages}\n\n"
+            f"<i>Pilih jadwal yang ingin dihapus:</i>\n"
+            f"<i>📰 Telegraph akan otomatis terupdate setelah dihapus!</i>",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -1041,7 +1336,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg,
             parse_mode='HTML',
             disable_web_page_preview= True,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Kembali", callback_data="back")]])
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data="back")]])
         )
             
     elif data == "back":
@@ -1091,21 +1386,26 @@ async def panel_refresh(query, context):
     telegraph_status = "🟢 AKTIF" if jadwal_data.get("telegraph_token") else "🔴 NONAKTIF"
     rules_status = "🟢 SUDAH DISET" if jadwal_data.get("rules_text") else "🔴 BELUM DISET"
     
+    # Hitung media status
+    media_count = sum(1 for hari in jadwal_data["media_jadwal"] if jadwal_data["media_jadwal"][hari]["url"])
+    media_status = f"🟢 {media_count}/7 HARI" if media_count > 0 else "🔴 BELUM DISET"
+    
     today = get_today()
     jadwal_hari_ini = len(jadwal_data["harian"][today])
     total_minggu = sum(len(jadwal_data["harian"][hari]) for hari in jadwal_data["harian"])
     
     keyboard = [
-        [InlineKeyboardButton("➕ Tambah Jadwal", callback_data="tambah"),
-         InlineKeyboardButton("🗑️ Hapus Jadwal", callback_data="hapus")],
-        [InlineKeyboardButton("📋 Lihat Semua", callback_data="lihat"),
-         InlineKeyboardButton("📢 Preview Hari Ini", callback_data="preview")],
-        [InlineKeyboardButton("📺 Kelola Channel", callback_data="manage_channels"),
-         InlineKeyboardButton("⏰ Set Jam Post", callback_data="set_time")],
-        [InlineKeyboardButton("📰 Setup Telegraph", callback_data="setup_telegraph"),
-         InlineKeyboardButton("🚀 Toggle Auto Post", callback_data="toggle_auto")],
-        [InlineKeyboardButton("📜 Set Rules", callback_data="set_rules"),
-         InlineKeyboardButton("👀 Preview Rules", callback_data="preview_rules")]
+        [InlineKeyboardButton("Tambah Jadwal", callback_data="tambah"),
+         InlineKeyboardButton("Hapus Jadwal", callback_data="hapus")],
+        [InlineKeyboardButton("Lihat Semua", callback_data="lihat"),
+         InlineKeyboardButton("Preview Hari Ini", callback_data="preview")],
+        [InlineKeyboardButton("Kelola Channel", callback_data="manage_channels"),
+         InlineKeyboardButton("Set Jam Post", callback_data="set_time")],
+        [InlineKeyboardButton("Setup Telegraph", callback_data="setup_telegraph"),
+         InlineKeyboardButton("Toggle Auto Post", callback_data="toggle_auto")],
+        [InlineKeyboardButton("Set Rules", callback_data="set_rules"),
+         InlineKeyboardButton("Preview Rules", callback_data="preview_rules")],
+        [InlineKeyboardButton("Set Media Jadwal", callback_data="set_media")]
     ]
     
     next_post = "Tidak ada" if not jadwal_data["auto_post_enabled"] else f"Bergiliran setiap hari jam {jadwal_data['post_time']}"
@@ -1121,6 +1421,7 @@ async def panel_refresh(query, context):
 🤖 Status: <b>{auto_status}</b>
 📰 Telegraph: <b>{telegraph_status}</b>
 📜 Rules: <b>{rules_status}</b>
+🎨 Media Jadwal: <b>{media_status}</b>
 ⏭️ Posting: <b>{next_post}</b>"""
     
     try:
@@ -1134,14 +1435,65 @@ async def panel_refresh(query, context):
 
 # =================== TEXT INPUT HANDLER ===================
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != OWNER_ID:
+    # Safety check untuk user yang valid
+    if not update.effective_user or update.effective_user.id != OWNER_ID:
         return
         
     waiting_for = context.user_data.get('waiting_input')
-    if not waiting_for:
-        return
+    waiting_media = context.user_data.get('waiting_media')
     
     text = update.message.text.strip()
+    
+    if waiting_media:
+        # Handle URL media upload
+        if text and text.startswith(('http://', 'https://')):
+            hari = waiting_media
+            
+            # Detect media type based on URL
+            lower_text = text.lower()
+            if any(ext in lower_text for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                media_type = "photo"
+            elif any(ext in lower_text for ext in ['.mp4', '.mov', '.avi', '.gif']):
+                media_type = "video"
+            else:
+                # Default to photo for unknown extensions
+                media_type = "photo"
+            
+            # Save media without testing
+            jadwal_data["media_jadwal"][hari] = {"type": media_type, "url": text}
+            save_data()
+            
+            type_display = "Foto" if media_type == "photo" else "Video/GIF"
+            await update.message.reply_text(
+                f"✅ <b>MEDIA {hari.upper()} BERHASIL DISET!</b>\n\n"
+                f"🎨 <b>Type:</b> {type_display}\n"
+                f"🔗 <b>URL:</b> <code>{text[:50]}...</code>\n"
+                f"📅 <b>Hari:</b> {hari}\n\n"
+                f"<b>✨ Fitur Aktif:</b>\n"
+                f"• Media akan muncul saat jadwal hari {hari}\n"
+                f"• Caption berisi jadwal lengkap\n"
+                f"• Otomatis di auto post\n"
+                f"• Support berbagai format\n\n"
+                f"<i>💡 Jadwal hari {hari} sekarang akan dikirim dengan {type_display.lower()}!</i>",
+                parse_mode='HTML'
+            )
+        else:
+            await update.message.reply_text(
+                "❌ <b>Format URL Tidak Valid!</b>\n\n"
+                "URL harus dimulai dengan <code>http://</code> atau <code>https://</code>\n\n"
+                "<b>Atau kirim media langsung:</b>\n"
+                "• Foto, video, atau GIF\n"
+                "• Forward dari chat lain\n\n"
+                "<b>Contoh URL yang benar:</b>\n"
+                "<code>https://example.com/jadwal.jpg</code>\n"
+                "<code>https://telegra.ph/file/abc123.mp4</code>",
+                parse_mode='HTML'
+            )
+        context.user_data['waiting_media'] = None
+        return
+    
+    if not waiting_for:
+        return
     
     if waiting_for == 'set_rules':
         if not text:
@@ -1394,6 +1746,89 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Reset waiting state
     context.user_data['waiting_input'] = None
 
+# =================== MEDIA HANDLER ===================
+async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Safety check untuk user yang valid
+    if not update.effective_user or update.effective_user.id != OWNER_ID:
+        return
+    
+    waiting_media = context.user_data.get('waiting_media')
+    if not waiting_media:
+        return
+    
+    hari = waiting_media
+    
+    try:
+        if update.message.photo:
+            # Photo - Simpan ke channel media atau gunakan file_id dari Telegram
+            file_id = update.message.photo[-1].file_id  # Get highest resolution
+            
+            # Gunakan file_id Telegram sebagai URL untuk keamanan
+            jadwal_data["media_jadwal"][hari] = {"type": "photo", "url": file_id}
+            save_data()
+            
+            await update.message.reply_text(
+                f"✅ <b>FOTO {hari.upper()} BERHASIL DISET!</b>\n\n"
+                f"📸 <b>Type:</b> Foto\n"
+                f"📅 <b>Hari:</b> {hari}\n"
+                f"🎨 <b>Status:</b> Siap digunakan\n\n"
+                f"<b>✨ Fitur Aktif:</b>\n"
+                f"• Foto akan muncul saat jadwal hari {hari}\n"
+                f"• Caption berisi jadwal lengkap\n"
+                f"• Otomatis di auto post\n\n"
+                f"<i>💡 Jadwal hari {hari} sekarang akan dikirim dengan foto!</i>",
+                parse_mode='HTML'
+            )
+            
+        elif update.message.video or update.message.animation:
+            # Video or GIF - Simpan file_id untuk keamanan
+            if update.message.video:
+                file_id = update.message.video.file_id
+            else:
+                file_id = update.message.animation.file_id
+            
+            # Gunakan file_id Telegram sebagai URL untuk keamanan
+            jadwal_data["media_jadwal"][hari] = {"type": "video", "url": file_id}
+            save_data()
+            
+            await update.message.reply_text(
+                f"✅ <b>VIDEO {hari.upper()} BERHASIL DISET!</b>\n\n"
+                f"🎬 <b>Type:</b> Video/GIF\n"
+                f"📅 <b>Hari:</b> {hari}\n"
+                f"🎨 <b>Status:</b> Siap digunakan\n\n"
+                f"<b>✨ Fitur Aktif:</b>\n"
+                f"• Video/GIF akan muncul saat jadwal hari {hari}\n"
+                f"• Caption berisi jadwal lengkap\n"
+                f"• Otomatis di auto post\n\n"
+                f"<i>💡 Jadwal hari {hari} sekarang akan dikirim dengan video/GIF!</i>",
+                parse_mode='HTML'
+            )
+            
+        else:
+            await update.message.reply_text(
+                "❌ <b>Format Media Tidak Didukung!</b>\n\n"
+                "<b>Format yang didukung:</b>\n"
+                "• Foto: JPG, PNG, WEBP\n"
+                "• Video: MP4, MOV, AVI\n"
+                "• GIF: Animated GIF\n\n"
+                "<b>Atau kirim URL media:</b>\n"
+                "<code>https://example.com/media.jpg</code>",
+                parse_mode='HTML'
+            )
+            return
+        
+        # Reset waiting state
+        context.user_data['waiting_media'] = None
+        
+    except Exception as e:
+        logger.error(f"Media handler error: {e}")
+        await update.message.reply_text(
+            f"❌ <b>Error Upload Media!</b>\n\n"
+            f"🐛 <b>Error:</b> <code>{str(e)[:100]}</code>\n\n"
+            f"<i>💡 Coba kirim media yang berbeda atau URL!</i>",
+            parse_mode='HTML'
+        )
+
 # =================== SCHEDULED DAILY POST ===================
 async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
     """Job harian bergiliran - kirim dengan format seperti foto contoh dengan timezone WIB yang benar"""
@@ -1421,21 +1856,20 @@ async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
         if channel_index == 0 and jadwal_data.get("telegraph_token"):
             update_telegraph()
         
-        # Post dengan format persis seperti foto
+        # Post dengan format persis seperti foto + media
         message = format_jadwal_hari_ini()
         
-        await context.bot.send_message(
-            chat_id=target_channel,
-            text=message,
-            parse_mode='HTML',
-            disable_web_page_preview=True
-        )
+        await send_jadwal_with_media(target_channel, context, message)
         
         # Notifikasi ke owner (hanya untuk channel pertama untuk menghindari spam)
         if channel_index == 0:
             try:
                 status = f"{len(today_schedule)} anime" if today_schedule else "Libur hari ini"
                 telegraph_info = " + Telegraph updated" if jadwal_data.get("telegraph_token") else ""
+                today_media = get_media_for_today()
+                media_info = ""
+                if today_media["url"]:
+                    media_info = f" + {today_media['type'].title()}"
                 
                 await context.bot.send_message(
                     OWNER_ID,
@@ -1443,7 +1877,7 @@ async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
                     f"📅 <b>Hari:</b> {today}\n"
                     f"📝 <b>Jadwal:</b> {status}\n"
                     f"⏰ <b>Waktu Mulai:</b> {now_wib.strftime('%H:%M WIB')}\n"
-                    f"🎨 <b>Format:</b> contoh{telegraph_info}\n"
+                    f"🎨 <b>Format:</b> Caption dengan media{media_info}{telegraph_info}\n"
                     f"📊 <b>Target:</b> {len(jadwal_data['channels'])} channel/group bergiliran\n"
                     f"🔄 <b>Interval:</b> 1 menit per channel/group",
                     parse_mode='HTML'
@@ -1467,75 +1901,21 @@ async def scheduled_daily_post(context: ContextTypes.DEFAULT_TYPE):
             except Exception as notif_error:
                 logger.error(f"Error notification failed: {notif_error}")
 
-# =================== SIGNAL HANDLER UNTUK GRACEFUL SHUTDOWN ===================
-async def shutdown_handler(signum, loop):
-    """Handle shutdown signals gracefully"""
-    print(f"\n📴 Received signal {signum}. Shutting down gracefully...")
-    
-    # Cleanup tasks
-    tasks = [task for task in asyncio.all_tasks(loop) if task is not asyncio.current_task()]
-    
-    if tasks:
-        print(f"🔄 Cancelling {len(tasks)} outstanding tasks...")
-        for task in tasks:
-            task.cancel()
-        
-        # Wait for tasks to complete with timeout
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True), 
-                timeout=5.0
-            )
-        except asyncio.TimeoutError:
-            print("⚠️ Some tasks did not complete in time")
-    
-    # Stop the application properly
-    if app and app.running:
-        print("🛑 Stopping application...")
-        try:
-            await app.stop()
-            await app.shutdown()
-        except Exception as e:
-            logger.error(f"Error during app shutdown: {e}")
-    
-    print("✅ Bot stopped gracefully")
-    loop.stop()
-
-def signal_handler(signum, frame):
-    """Handle shutdown signals gracefully"""
-    print(f"\n📴 Received signal {signum}. Initiating graceful shutdown...")
-    if app and app.running:
-        asyncio.create_task(shutdown_handler(signum, asyncio.get_event_loop()))
-    else:
-        sys.exit(0)
-
 # =================== MAIN FUNCTION ===================
 def main():
     global app
     
-    # Kill existing bot instances to prevent conflicts
-    print("🔍 Checking for existing bot instances...")
-    kill_existing_bots()
-    
     load_data()
     
-    # Create custom request with proper timeout settings
-    request = HTTPXRequest(
-        connection_pool_size=1,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        connect_timeout=30.0,
-        pool_timeout=30.0
-    )
-    
-    # Konfigurasi Application dengan request object yang diperbaiki
-    app = Application.builder().token(BOT_TOKEN).request(request).build()
+    # Build aplikasi dengan pengaturan yang disederhanakan
+    app = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
     app.add_handler(CommandHandler("jadwal", jadwal_cmd))
     app.add_handler(CommandHandler("rules", rules_cmd))
     app.add_handler(CommandHandler("panel", panel_cmd))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION, handle_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     # Setup jobs dengan timezone WIB yang benar
@@ -1567,23 +1947,19 @@ def main():
     print(f"📊 Loaded {sum(len(jadwal_data['harian'][d]) for d in jadwal_data['harian'])} harian + {len(jadwal_data['upcoming'])} upcoming")
     print(f"📺 {len(jadwal_data['channels'])} channels configured for auto posting")
     print(f"📜 Rules {'configured' if jadwal_data.get('rules_text') else 'not configured'}")
+    media_count = sum(1 for hari in jadwal_data["media_jadwal"] if jadwal_data["media_jadwal"][hari]["url"])
+    print(f"🎨 Media {media_count}/7 days configured")
     print(f"⏰ Auto post: {'enabled' if jadwal_data['auto_post_enabled'] else 'disabled'}")
     print("📱 Commands available: /jadwal, /rules, /panel (owner only)")
+    print("🎯 Group commands: /jadwal (auto-delete), /rules (auto-delete)")
+    print("🔒 PM commands: Owner only")
     print("🔄 Press Ctrl+C to stop")
     
     try:
-        # Run dengan polling sederhana tanpa signal handling yang rumit
-        app.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            close_loop=False,  # PENTING: Biarkan loop terbuka
-            stop_signals=None  # Disable default signal handlers
-        )
+        # Run dengan polling yang disederhanakan
+        app.run_polling(drop_pending_updates=True)
     except KeyboardInterrupt:
         print("\n📴 Shutting down...")
-        try:
-            app.stop()
-        except:
-            pass
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:
@@ -1594,4 +1970,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
-        os._exit(0)  # Force exit tanpa cleanup yang rumit
+        sys.exit(0)
+    except Exception as e:
+        print(f"❌ Critical error: {e}")
+        sys.exit(1)
