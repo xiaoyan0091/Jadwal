@@ -1,23 +1,147 @@
 {
   "harian": {
-    "Senin": [],
-    "Selasa": [],
-    "Rabu": [
-      "Twin Martial Souls"
+    "Senin": [
+      "Renegade Immortal",
+      "Against The Sky Supreme",
+      "Supreme God emperor",
+      "Lingwu Continent",
+      "The Divine Emperor of Destiny",
+      "The Sect Members Are Spies",
+      "Lost on Journey",
+      "Return of The Immortal",
+      "Swallowed Star [malam]"
     ],
-    "Kamis": [],
-    "Jumat": [],
-    "Sabtu": [],
-    "Minggu": []
+    "Selasa": [
+      "Lord of Ancient God grave",
+      "Supreme Alchemy [Hiatus]",
+      "Peerless Battle Spirit",
+      "100.000 Years Of Refining Qi",
+      "Martial Master",
+      "Peerless Divine Emperor",
+      "The Alchemist's Rise",
+      "Shrouding The Heavens [malam]",
+      "Divine Manifestation [malam]",
+      "Purple River Lanjut Januari 2026"
+    ],
+    "Rabu": [
+      "The Immortal Doctor",
+      "Twin Martial Spirit",
+      "The Gate of Mystical Realm",
+      "Supreme Over The Sky",
+      "Ancient Vengeance- Windbreaker",
+      "The Supreme Dantian (Hiatus)",
+      "Throne of Seal [malam]"
+    ],
+    "Kamis": [
+      "My Senior Brother is Too Steady",
+      "Twin Martial Spirit",
+      "Martial Conqueror of the Cosmos",
+      "The Divine Emperor of Destiny",
+      "Lost on Journey",
+      "Wind Driver in Tang Dynasty",
+      "Perfect world [malam]"
+    ],
+    "Jumat": [
+      "Tomb Of fallen Gods S3",
+      "Supreme Alchemy [Hiatus]",
+      "Lingwu Continent",
+      "Against The Sky Supreme",
+      "Supreme God emperor",
+      "Ancient Vengeance- Windbreaker",
+      "Soul Land 2 [malam]"
+    ],
+    "Sabtu": [
+      "Immortality Season 5",
+      "Ascendants of the Nine Suns",
+      "The Sect Members Are Spies",
+      "A Mortal’s Journey to Immortality",
+      "Legend Of Martial Immortal",
+      "Last Dynasty ( WeTV)",
+      "100.000 Years Of Refining Qi",
+      "Supreme Over The Sky",
+      "Lord Of Ancient God Grave",
+      "Peerless Divine Emperor",
+      "Threads of Fate A War Untold",
+      "The Supreme Dantian ( Hiatus)",
+      "BTTH S5 [malam]"
+    ],
+    "Minggu": [
+      "Tales Of Herding Gods",
+      "Martial Master",
+      "The Immortal Doctor",
+      "Martial Conqueror of the Cosmos",
+      "The Daily Life of the Immortal King S5",
+      "Renegade Immortal [malam]"
+    ]
   },
   "upcoming": [],
   "channels": [
-    "-1002372420001",
+    -1001831703421,
     "-1002652503756"
   ],
-  "post_time": "16:59",
+  "post_time": "06:30",
   "auto_post_enabled": false,
   "telegraph_token": "42403670639569da0a30f5ded004e40f910af96f5bd021f70a7d97b8bc6f",
   "telegraph_url": "https://telegra.ph/Jadwal-Donghua-CA3D-11-05-13",
-  "rules_text": "<b>📜 RULES GRUP</b>\n\n1. <b>Dilarang spam</b>\n2. <i>Sopan dan santun</i>\n3. <u>No 18+ content</u>"
+  "rules_text": "<b>📜 RULES GRUP</b>\n\n1. <b>Dilarang spam</b>\n2. <i>Sopan dan santun</i>\n3. <u>No 18+ content</u>",
+  "media_jadwal": {
+    "Senin": {
+      "type": "video",
+      "url": "https://files.catbox.moe/pa7lan.mp4"
+    },
+    "Selasa": {
+      "type": "video",
+      "url": "https://files.catbox.moe/f6xzxw.mp4"
+    },
+    "Rabu": {
+      "type": "video",
+      "url": "https://files.catbox.moe/7qd557.mp4"
+    },
+    "Kamis": {
+      "type": "video",
+      "url": "https://files.catbox.moe/rfgpy5.mp4"
+    },
+    "Jumat": {
+      "type": "video",
+      "url": "https://files.catbox.moe/pjlbts.mp4"
+    },
+    "Sabtu": {
+      "type": "video",
+      "url": "https://files.catbox.moe/i6xbrw.mp4"
+    },
+    "Minggu": {
+      "type": "video",
+      "url": "https://files.catbox.moe/lqzcub.mp4"
+    }
+  },
+  "captions": {
+    "Senin": {
+      "media": "",
+      "caption": ""
+    },
+    "Selasa": {
+      "media": "",
+      "caption": ""
+    },
+    "Rabu": {
+      "media": "",
+      "caption": ""
+    },
+    "Kamis": {
+      "media": "AgACAgUAAxkBAAIHZGlNZCLplhea_PhSJVpPyQz_ET-pAAJ-DGsbwvJoVvgYnwhuiaxMAQADAgADeQADNgQ",
+      "caption": ""
+    },
+    "Jumat": {
+      "media": "AgACAgUAAxkBAAIHTmlNYpwRiWRagz18uFrQlHMa0Z3SAAJ5DGsbwvJoVuTPLf60e6ATAQADAgADeQADNgQ",
+      "caption": ""
+    },
+    "Sabtu": {
+      "media": "AgACAgUAAxkBAAIHYGlNY9L-ccY6pgfynqvp2CWobxXQAAJ9DGsbwvJoVhkSXm-zqFeHAQADAgADeQADNgQ",
+      "caption": ""
+    },
+    "Minggu": {
+      "media": "",
+      "caption": ""
+    }
+  }
 }
