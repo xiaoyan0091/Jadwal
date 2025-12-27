@@ -1,4 +1,3 @@
-
 import json
 import asyncio
 import logging
@@ -54,11 +53,20 @@ last_rules_time = None  # Waktu terakhir rules dikirim
 app = None
 
 # =================== CACHE ===================
-@lru_cache(maxsize=128)
-def cached_get_today():
-    """Cache hari ini untuk meningkatkan performa"""
-    days = {"Monday":"Senin","Tuesday":"Selasa","Wednesday":"Rabu","Thursday":"Kamis","Friday":"Jumat","Saturday":"Sabtu","Sunday":"Minggu"}
-    return days[datetime.now(WIB).strftime("%A")]
+def get_today():
+    """Selalu ambil hari terbaru berdasarkan timezone WIB"""
+    now = datetime.now(WIB)
+    days = {
+        "Monday": "Senin",
+        "Tuesday": "Selasa", 
+        "Wednesday": "Rabu",
+        "Thursday": "Kamis",
+        "Friday": "Jumat",
+        "Saturday": "Sabtu",
+        "Sunday": "Minggu"
+    }
+    english_day = now.strftime("%A")
+    return days[english_day]
 
 @lru_cache(maxsize=64)
 def cached_format_time(hour, minute):
@@ -259,9 +267,6 @@ def load_data():
         logger.error(f"Load data error: {e}")
         save_data()
 
-def get_today():
-    return cached_get_today()
-
 def get_media_for_today():
     """Ambil media untuk hari ini"""
     today = get_today()
@@ -317,7 +322,7 @@ def format_jadwal_lengkap():
         msg += "Tidak ada jadwal hari ini\n"
     
     # Upcoming section
-    msg += "\n<b>Upcoming Donghua :\n</b>\n"
+    msg += "\n<b>Upcoming Donghua :\n</b>"
     
     if jadwal_data["upcoming"]:
         for i, up in enumerate(jadwal_data["upcoming"], 1):
@@ -775,7 +780,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Klik 'Upload Media'\n"
             "• Kirim foto, video, atau GIF\n"
             "• Bot akan otomatis detect type\n\n"
-            "<i>💡 Media ini akan digunakan saat posting jadwal hari {hari}!</i>",
+            f"<i>💡 Media ini akan digunakan saat posting jadwal hari {hari}!</i>",
             parse_mode='HTML',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
