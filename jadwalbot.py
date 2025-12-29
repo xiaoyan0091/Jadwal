@@ -170,10 +170,21 @@ def generate_telegraph_content():
             
             # List anime
             for i, anime in enumerate(jadwal_data["harian"][hari], 1):
-                content.append({
-                    "tag": "p",
-                    "children": [f"   {i}. {anime}"]
-                })
+                if isinstance(anime, dict):
+                    # Anime dengan link
+                    content.append({
+                        "tag": "p",
+                        "children": [
+                            f"   {i}. ",
+                            {"tag": "a", "attrs": {"href": anime["link"]}, "children": [anime["judul"]]}
+                        ]
+                    })
+                else:
+                    # Anime tanpa link (string biasa)
+                    content.append({
+                        "tag": "p",
+                        "children": [f"   {i}. {anime}"]
+                    })
             
             # Spasi antar hari - double BR
             content.append({"tag": "br"})
@@ -282,7 +293,12 @@ def format_jadwal_hari_ini():
     # Jadwal harian
     if jadwal_data["harian"][today]:
         for i, anime in enumerate(jadwal_data["harian"][today], 1):
-            msg += f"  {i}. {anime}\n"
+            if isinstance(anime, dict):
+                # Anime dengan link - tampilkan sebagai hyperlink
+                msg += f"  {i}. <a href=\"{anime['link']}\">{anime['judul']}</a>\n"
+            else:
+                # Anime tanpa link
+                msg += f"  {i}. {anime}\n"
     else:
         msg += "❌ <i>Tidak ada jadwal donghua hari ini dalam waktu dekat</i>\n"
     
@@ -295,7 +311,12 @@ def format_jadwal_hari_ini():
             msg += f'<blockquote>{i}. <b>{up["judul"]}</b>'
             if up.get("season"):
                 msg += f'[Season {up["season"]}]'
-            msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
+            
+            # Cek apakah ada link atau tidak
+            if up.get("link"):
+                msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
+            else:
+                msg += f'\n({up["hari"]}, {up["tanggal"]})</blockquote>\n'
     else:
         msg += "<blockquote>Belum ada donghua dalam waktu dekat</blockquote>\n\n"
     
@@ -317,7 +338,12 @@ def format_jadwal_lengkap():
     # Jadwal hari ini
     if jadwal_data["harian"][today]:
         for i, anime in enumerate(jadwal_data["harian"][today], 1):
-            msg += f" {i}. {anime}\n"
+            if isinstance(anime, dict):
+                # Anime dengan link - tampilkan sebagai hyperlink
+                msg += f" {i}. <a href=\"{anime['link']}\">{anime['judul']}</a>\n"
+            else:
+                # Anime tanpa link
+                msg += f" {i}. {anime}\n"
     else:
         msg += "Tidak ada jadwal hari ini\n"
     
@@ -329,7 +355,12 @@ def format_jadwal_lengkap():
             msg += f'<blockquote>{i}. <b>{up["judul"]}</b>'
             if up.get("season"):
                 msg += f'[Season {up["season"]}]'
-            msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
+            
+            # Cek apakah ada link atau tidak
+            if up.get("link"):
+                msg += f'\n({up["hari"]}, {up["tanggal"]}) (<a href="{up["link"]}">PV</a>)</blockquote>\n'
+            else:
+                msg += f'\n({up["hari"]}, {up["tanggal"]})</blockquote>\n'
     else:
         msg += "<blockquote> Belum ada donghua dalam waktu dekat </blockquote>\n\n"
     
@@ -401,13 +432,23 @@ def get_all_schedule_items():
     # Jadwal harian
     for hari in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
         for anime in jadwal_data["harian"][hari]:
-            items.append({
-                'type': 'harian',
-                'text': f"{anime} ({hari})",
-                'hari': hari,
-                'anime': anime,
-                'hash': hash(anime) % 1000
-            })
+            if isinstance(anime, dict):
+                display_text = f"{anime['judul']} ({hari})"
+                items.append({
+                    'type': 'harian',
+                    'text': display_text,
+                    'hari': hari,
+                    'anime': anime,
+                    'hash': hash(anime['judul']) % 1000
+                })
+            else:
+                items.append({
+                    'type': 'harian',
+                    'text': f"{anime} ({hari})",
+                    'hari': hari,
+                    'anime': anime,
+                    'hash': hash(anime) % 1000
+                })
     
     # Upcoming
     for i, up in enumerate(jadwal_data["upcoming"]):
@@ -1153,13 +1194,17 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "<b>➕ TAMBAH JADWAL DONGHUA</b>\n\n"
             "<b>Format Jadwal Harian:</b>\n"
-            "<code>Judul Anime|Hari</code>\n\n"
+            "<code>Judul Anime|Hari</code>\n"
+            "<code>Judul Anime|Hari|Link</code>\n\n"
             "<b>Format Upcoming:</b>\n"
             "<code>Judul|Hari|Tanggal|Link</code>\n"
-            "<code>Judul|Hari|Tanggal|Link|Season</code>\n\n"
+            "<code>Judul|Hari|Tanggal|Link|Season</code>\n"
+            "<code>Judul|Hari|Tanggal|Season</code>\n\n"
             "<b>📝 Contoh:</b>\n"
             "• <code>Purple River Season 2|Senin</code>\n"
-            "• <code>The King Avatar|Minggu|25 Desember|https://link.com|3</code>\n\n"
+            "• <code>Purple River Season 2|Senin|https://link.com</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|https://link.com|3</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|3</code>\n\n"
             "<b>📅 Hari yang valid:</b>\n"
             "Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu\n\n"
             "<i>💡 Jadwal harian akan muncul setiap hari sesuai hari yang dipilih!</i>\n"
@@ -1316,7 +1361,10 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if jadwal_data["harian"][hari]:
                 for i, anime in enumerate(jadwal_data["harian"][hari], 1):
-                    msg += f"   {i}. {anime}\n"
+                    if isinstance(anime, dict):
+                        msg += f'   {i}. <a href="{anime["link"]}">{anime["judul"]}</a>\n'
+                    else:
+                        msg += f"   {i}. {anime}\n"
                 total_harian += len(jadwal_data["harian"][hari])
             else:
                 msg += "   <i>- Jadwal belum di isi</i>\n"
@@ -1355,14 +1403,24 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             original_list = jadwal_data["harian"][hari][:]
             for anime in original_list:
-                if hash(anime) % 1000 == target_hash:
-                    jadwal_data["harian"][hari].remove(anime)
-                    save_data()
-                    # Update Telegraph setelah hapus
-                    if jadwal_data.get("telegraph_token"):
-                        update_telegraph()
-                    await query.answer(f"✅ {anime} dihapus dari {hari}!")
-                    break
+                if isinstance(anime, dict):
+                    if hash(anime['judul']) % 1000 == target_hash:
+                        jadwal_data["harian"][hari].remove(anime)
+                        save_data()
+                        # Update Telegraph setelah hapus
+                        if jadwal_data.get("telegraph_token"):
+                            update_telegraph()
+                        await query.answer(f"✅ {anime['judul']} dihapus dari {hari}!")
+                        break
+                else:
+                    if hash(anime) % 1000 == target_hash:
+                        jadwal_data["harian"][hari].remove(anime)
+                        save_data()
+                        # Update Telegraph setelah hapus
+                        if jadwal_data.get("telegraph_token"):
+                            update_telegraph()
+                        await query.answer(f"✅ {anime} dihapus dari {hari}!")
+                        break
             else:
                 await query.answer("❌ Jadwal tidak ditemukan!")
         
@@ -1534,7 +1592,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         parts = [p.strip() for p in text.split("|")]
         
-        if len(parts) == 2:  # Jadwal harian
+        if len(parts) == 2:  # Jadwal harian tanpa link
             judul, hari = parts
             
             if not judul:
@@ -1545,9 +1603,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Hari tidak valid! Gunakan: Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu")
                 return
             
-            if judul in jadwal_data["harian"][hari]:
-                await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di hari {hari}!", parse_mode='HTML')
-                return
+            # Cek apakah judul sudah ada (dalam bentuk string atau dict)
+            for anime in jadwal_data["harian"][hari]:
+                if isinstance(anime, dict) and anime['judul'] == judul:
+                    await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di hari {hari}!", parse_mode='HTML')
+                    return
+                elif isinstance(anime, str) and anime == judul:
+                    await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di hari {hari}!", parse_mode='HTML')
+                    return
                 
             jadwal_data["harian"][hari].append(judul)
             save_data()
@@ -1564,19 +1627,149 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ <b>Jadwal Harian Berhasil Ditambah!</b>\n\n"
                 f"📝 <b>Anime:</b> {judul}\n"
                 f"📅 <b>Hari:</b> {hari}{telegraph_updated}\n\n"
-                f"<i>💡 Akan muncul di jadwal harian dengan format seperti foto!</i>", 
+                f"<i>💡 Akan muncul di jadwal harian tanpa link!</i>", 
                 parse_mode='HTML'
             )
                 
-        elif len(parts) in [4, 5]:  # Upcoming (dengan atau tanpa season)
-            if len(parts) == 4:
-                judul, hari, tanggal, link = parts
-                season = None
-            else:  # len(parts) == 5
-                judul, hari, tanggal, link, season = parts
+        elif len(parts) == 3:  # Jadwal harian dengan link atau upcoming tanpa link
+            judul, hari, param3 = parts
             
-            if not all([judul, hari, tanggal, link]):
-                await update.message.reply_text("❌ Judul, hari, tanggal, dan link harus diisi!")
+            if not judul:
+                await update.message.reply_text("❌ Judul anime tidak boleh kosong!")
+                return
+                
+            if hari not in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
+                await update.message.reply_text("❌ Hari tidak valid!")
+                return
+            
+            # Cek apakah param3 adalah URL (untuk jadwal harian dengan link)
+            if param3.startswith(("http://", "https://")):
+                # Jadwal harian dengan link
+                link = param3
+                
+                # Cek apakah judul sudah ada
+                for anime in jadwal_data["harian"][hari]:
+                    if isinstance(anime, dict) and anime['judul'] == judul:
+                        await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di hari {hari}!", parse_mode='HTML')
+                        return
+                    elif isinstance(anime, str) and anime == judul:
+                        await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di hari {hari}!", parse_mode='HTML')
+                        return
+                
+                anime_data = {"judul": judul, "link": link}
+                jadwal_data["harian"][hari].append(anime_data)
+                save_data()
+                
+                # Update Telegraph otomatis setelah tambah jadwal
+                telegraph_updated = ""
+                if jadwal_data.get("telegraph_token"):
+                    if update_telegraph():
+                        telegraph_updated = "\n📰 <b>Telegraph:</b> Otomatis terupdate ✅"
+                    else:
+                        telegraph_updated = "\n📰 <b>Telegraph:</b> Gagal update ❌"
+                
+                await update.message.reply_text(
+                    f"✅ <b>Jadwal Harian dengan Link Berhasil Ditambah!</b>\n\n"
+                    f"📝 <b>Anime:</b> {judul}\n"
+                    f"📅 <b>Hari:</b> {hari}\n"
+                    f"🔗 <b>Link:</b> <a href='{link}'>Preview</a>{telegraph_updated}\n\n"
+                    f"<i>💡 Akan muncul di jadwal harian sebagai hyperlink!</i>", 
+                    parse_mode='HTML'
+                )
+            else:
+                # Upcoming tanpa link (param3 = season)
+                season = param3
+                tanggal = "TBA"  # Default tanggal
+                
+                if any(up["judul"] == judul for up in jadwal_data["upcoming"]):
+                    await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di upcoming!", parse_mode='HTML')
+                    return
+                
+                upcoming_item = {
+                    "judul": judul,
+                    "hari": hari, 
+                    "tanggal": tanggal,
+                    "season": season
+                }
+                
+                jadwal_data["upcoming"].append(upcoming_item)
+                save_data()
+                
+                await update.message.reply_text(
+                    f"✅ <b>Upcoming Tanpa Link Berhasil Ditambah!</b>\n\n"
+                    f"📝 <b>Anime:</b> {judul}\n"
+                    f"📺 <b>Season:</b> {season}\n"
+                    f"📅 <b>Rilis:</b> {hari}, {tanggal}\n\n"
+                    f"<i>💡 Akan muncul di blockquote tanpa link preview!</i>", 
+                    parse_mode='HTML'
+                )
+            
+        elif len(parts) == 4:  # Upcoming dengan/tanpa link
+            judul, hari, tanggal, param4 = parts
+            
+            if not all([judul, hari, tanggal, param4]):
+                await update.message.reply_text("❌ Semua field harus diisi!")
+                return
+                
+            if hari not in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
+                await update.message.reply_text("❌ Hari tidak valid!")
+                return
+            
+            if any(up["judul"] == judul for up in jadwal_data["upcoming"]):
+                await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di upcoming!", parse_mode='HTML')
+                return
+            
+            # Cek apakah param4 adalah URL atau season
+            if param4.startswith(("http://", "https://")):
+                # Upcoming dengan link
+                link = param4
+                
+                upcoming_item = {
+                    "judul": judul,
+                    "hari": hari, 
+                    "tanggal": tanggal,
+                    "link": link
+                }
+                
+                jadwal_data["upcoming"].append(upcoming_item)
+                save_data()
+                
+                await update.message.reply_text(
+                    f"✅ <b>Upcoming dengan Link Berhasil Ditambah!</b>\n\n"
+                    f"📝 <b>Anime:</b> {judul}\n"
+                    f"📅 <b>Rilis:</b> {hari}, {tanggal}\n"
+                    f"🔗 <b>Preview:</b> <a href='{link}'>Link</a>\n\n"
+                    f"<i>💡 Akan muncul di blockquote hijau dengan link preview!</i>", 
+                    parse_mode='HTML'
+                )
+            else:
+                # Upcoming tanpa link (param4 = season)
+                season = param4
+                
+                upcoming_item = {
+                    "judul": judul,
+                    "hari": hari, 
+                    "tanggal": tanggal,
+                    "season": season
+                }
+                
+                jadwal_data["upcoming"].append(upcoming_item)
+                save_data()
+                
+                await update.message.reply_text(
+                    f"✅ <b>Upcoming Tanpa Link Berhasil Ditambah!</b>\n\n"
+                    f"📝 <b>Anime:</b> {judul}\n"
+                    f"📺 <b>Season:</b> {season}\n"
+                    f"📅 <b>Rilis:</b> {hari}, {tanggal}\n\n"
+                    f"<i>💡 Akan muncul di blockquote tanpa link preview!</i>", 
+                    parse_mode='HTML'
+                )
+            
+        elif len(parts) == 5:  # Upcoming lengkap dengan link dan season
+            judul, hari, tanggal, link, season = parts
+            
+            if not all([judul, hari, tanggal, link, season]):
+                await update.message.reply_text("❌ Semua field harus diisi!")
                 return
                 
             if hari not in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
@@ -1595,34 +1788,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "judul": judul,
                 "hari": hari, 
                 "tanggal": tanggal,
-                "link": link
+                "link": link,
+                "season": season
             }
-            
-            if season:
-                upcoming_item["season"] = season
             
             jadwal_data["upcoming"].append(upcoming_item)
             save_data()
             
-            season_text = f"\n📺 <b>Season:</b> {season}" if season else ""
-            
             await update.message.reply_text(
-                f"✅ <b>Upcoming Berhasil Ditambah!</b>\n\n"
-                f"📝 <b>Anime:</b> {judul}{season_text}\n"
+                f"✅ <b>Upcoming Lengkap Berhasil Ditambah!</b>\n\n"
+                f"📝 <b>Anime:</b> {judul}\n"
+                f"📺 <b>Season:</b> {season}\n"
                 f"📅 <b>Rilis:</b> {hari}, {tanggal}\n"
                 f"🔗 <b>Preview:</b> <a href='{link}'>Link</a>\n\n"
-                f"<i>💡 Akan muncul di blockquote hijau seperti foto contoh!</i>", 
+                f"<i>💡 Akan muncul di blockquote hijau lengkap seperti foto contoh!</i>", 
                 parse_mode='HTML'
             )
             
         else:
             await update.message.reply_text(
                 "❌ <b>Format Salah!</b>\n\n"
-                "<b>Untuk jadwal harian:</b>\n"
-                "<code>Judul|Hari</code>\n\n"
-                "<b>Untuk upcoming:</b>\n"
-                "<code>Judul|Hari|Tanggal|Link</code>\n"
-                "<code>Judul|Hari|Tanggal|Link|Season</code> (dengan season)",
+                "<b>Format yang didukung:</b>\n"
+                "• <code>Judul|Hari</code> (harian tanpa link)\n"
+                "• <code>Judul|Hari|Link</code> (harian dengan link)\n"
+                "• <code>Judul|Hari|Tanggal|Link</code> (upcoming dengan link)\n"
+                "• <code>Judul|Hari|Tanggal|Season</code> (upcoming tanpa link)\n"
+                "• <code>Judul|Hari|Tanggal|Link|Season</code> (upcoming lengkap)",
                 parse_mode='HTML'
             )
     
