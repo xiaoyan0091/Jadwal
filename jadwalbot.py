@@ -847,7 +847,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Kembali", callback_data=f"media_{hari}")]])
         )
         context.user_data['waiting_media'] = hari
-    
     elif data.startswith("delete_"):
         hari = data.replace("delete_", "")
         
@@ -1197,14 +1196,17 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<code>Judul Anime|Hari</code>\n"
             "<code>Judul Anime|Hari|Link</code>\n\n"
             "<b>Format Upcoming:</b>\n"
+            "<code>Judul|Hari|Tanggal</code>\n"
             "<code>Judul|Hari|Tanggal|Link</code>\n"
-            "<code>Judul|Hari|Tanggal|Link|Season</code>\n"
-            "<code>Judul|Hari|Tanggal|Season</code>\n\n"
+            "<code>Judul|Hari|Tanggal|Season</code>\n"
+            "<code>Judul|Hari|Tanggal|Link|Season</code>\n\n"
             "<b>📝 Contoh:</b>\n"
             "• <code>Purple River Season 2|Senin</code>\n"
             "• <code>Purple River Season 2|Senin|https://link.com</code>\n"
-            "• <code>The King Avatar|Minggu|25 Desember|https://link.com|3</code>\n"
-            "• <code>The King Avatar|Minggu|25 Desember|3</code>\n\n"
+            "• <code>The King Avatar|Minggu|25 Desember</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|https://link.com</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|3</code>\n"
+            "• <code>The King Avatar|Minggu|25 Desember|https://link.com|3</code>\n\n"
             "<b>📅 Hari yang valid:</b>\n"
             "Senin, Selasa, Rabu, Kamis, Jumat, Sabtu, Minggu\n\n"
             "<i>💡 Jadwal harian akan muncul setiap hari sesuai hari yang dipilih!</i>\n"
@@ -1631,7 +1633,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='HTML'
             )
                 
-        elif len(parts) == 3:  # Jadwal harian dengan link atau upcoming tanpa link
+        elif len(parts) == 3:
             judul, hari, param3 = parts
             
             if not judul:
@@ -1677,9 +1679,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='HTML'
                 )
             else:
-                # Upcoming tanpa link (param3 = season)
-                season = param3
-                tanggal = "TBA"  # Default tanggal
+                # Upcoming tanpa link - param3 adalah tanggal
+                tanggal = param3
                 
                 if any(up["judul"] == judul for up in jadwal_data["upcoming"]):
                     await update.message.reply_text(f"⚠️ <b>{judul}</b> sudah ada di upcoming!", parse_mode='HTML')
@@ -1688,8 +1689,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 upcoming_item = {
                     "judul": judul,
                     "hari": hari, 
-                    "tanggal": tanggal,
-                    "season": season
+                    "tanggal": tanggal
                 }
                 
                 jadwal_data["upcoming"].append(upcoming_item)
@@ -1698,17 +1698,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     f"✅ <b>Upcoming Tanpa Link Berhasil Ditambah!</b>\n\n"
                     f"📝 <b>Anime:</b> {judul}\n"
-                    f"📺 <b>Season:</b> {season}\n"
                     f"📅 <b>Rilis:</b> {hari}, {tanggal}\n\n"
                     f"<i>💡 Akan muncul di blockquote tanpa link preview!</i>", 
                     parse_mode='HTML'
                 )
             
-        elif len(parts) == 4:  # Upcoming dengan/tanpa link
+        elif len(parts) == 4:  # Upcoming dengan link atau season
             judul, hari, tanggal, param4 = parts
             
-            if not all([judul, hari, tanggal, param4]):
-                await update.message.reply_text("❌ Semua field harus diisi!")
+            if not all([judul, hari, tanggal]):
+                await update.message.reply_text("❌ Judul, hari, dan tanggal harus diisi!")
                 return
                 
             if hari not in ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"]:
@@ -1742,8 +1741,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"<i>💡 Akan muncul di blockquote hijau dengan link preview!</i>", 
                     parse_mode='HTML'
                 )
-            else:
-                # Upcoming tanpa link (param4 = season)
+            elif param4:
+                # Upcoming dengan season (param4 tidak kosong)
                 season = param4
                 
                 upcoming_item = {
@@ -1757,11 +1756,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 save_data()
                 
                 await update.message.reply_text(
-                    f"✅ <b>Upcoming Tanpa Link Berhasil Ditambah!</b>\n\n"
+                    f"✅ <b>Upcoming dengan Season Berhasil Ditambah!</b>\n\n"
                     f"📝 <b>Anime:</b> {judul}\n"
                     f"📺 <b>Season:</b> {season}\n"
                     f"📅 <b>Rilis:</b> {hari}, {tanggal}\n\n"
                     f"<i>💡 Akan muncul di blockquote tanpa link preview!</i>", 
+                    parse_mode='HTML'
+                )
+            else:
+                # param4 kosong - upcoming tanpa link dan tanpa season
+                upcoming_item = {
+                    "judul": judul,
+                    "hari": hari, 
+                    "tanggal": tanggal
+                }
+                
+                jadwal_data["upcoming"].append(upcoming_item)
+                save_data()
+                
+                await update.message.reply_text(
+                    f"✅ <b>Upcoming Tanpa Link dan Season Berhasil Ditambah!</b>\n\n"
+                    f"📝 <b>Anime:</b> {judul}\n"
+                    f"📅 <b>Rilis:</b> {hari}, {tanggal}\n\n"
+                    f"<i>💡 Akan muncul di blockquote tanpa link dan season!</i>", 
                     parse_mode='HTML'
                 )
             
@@ -1811,8 +1828,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "<b>Format yang didukung:</b>\n"
                 "• <code>Judul|Hari</code> (harian tanpa link)\n"
                 "• <code>Judul|Hari|Link</code> (harian dengan link)\n"
+                "• <code>Judul|Hari|Tanggal</code> (upcoming tanpa link/season)\n"
                 "• <code>Judul|Hari|Tanggal|Link</code> (upcoming dengan link)\n"
-                "• <code>Judul|Hari|Tanggal|Season</code> (upcoming tanpa link)\n"
+                "• <code>Judul|Hari|Tanggal|Season</code> (upcoming dengan season)\n"
                 "• <code>Judul|Hari|Tanggal|Link|Season</code> (upcoming lengkap)",
                 parse_mode='HTML'
             )
