@@ -14,6 +14,10 @@ from .handlers import (
     handle_media,
     handle_text,
     scheduled_daily_post,
+    ban_cmd,
+    afk_cmd,
+    noafk_cmd,
+    handle_afk_status,
 )
 
 # =================== SETUP ===================
@@ -39,6 +43,9 @@ def main():
     app.add_handler(CommandHandler("jadwal", jadwal_cmd))
     app.add_handler(CommandHandler("rules", rules_cmd))
     app.add_handler(CommandHandler("panel", panel_cmd))
+    app.add_handler(CommandHandler("ban", ban_cmd))
+    app.add_handler(CommandHandler("afk", afk_cmd))
+    app.add_handler(CommandHandler("noafk", noafk_cmd))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION, handle_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

@@ -5,6 +5,7 @@ import math
 import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+from telegram.constants import ChatMemberStatus
 
 from .config import OWNER_ID
 from .data_manager import jadwal_data, save_data
@@ -26,6 +27,22 @@ WIB = pytz.timezone('Asia/Jakarta')
 user_cooldown = {}
 last_jadwal_time = None
 last_rules_time = None
+
+def parse_time(time_str):
+    if not time_str:
+        return None
+
+    value = int(time_str[:-1])
+    unit = time_str[-1].lower()
+
+    if unit == 'm':
+        return timedelta(minutes=value)
+    elif unit == 'h':
+        return timedelta(hours=value)
+    elif unit == 'd':
+        return timedelta(days=value)
+    else:
+        return None
 
 async def send_jadwal_with_media(chat_id, context, message_text):
     """Send jadwal dengan foto/video/GIF sesuai hari"""
@@ -73,6 +90,142 @@ async def send_jadwal_with_media(chat_id, context, message_text):
             logger.error(f"Send text fallback error: {fallback_error}")
 
 # =================== COMMAND HANDLERS ===================
+async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # Cek apakah user adalah admin
+    try:
+        member = await chat.get_member(user.id)
+        if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+            await update.message.reply_text("Maaf, Anda harus menjadi admin untuk menggunakan perintah ini.")
+            return
+    except Exception as e:
+        await update.message.reply_text("Gagal memverifikasi status admin.")
+        logger.error(f"Gagal memverifikasi status admin: {e}")
+        return
+
+    # Ban by reply
+    if update.message.reply_to_message:
+        target_user = update.message.reply_to_message.from_user
+        args = context.args
+
+        duration = None
+        reason = ""
+
+        if args:
+            duration_arg = args[0]
+            parsed_duration = parse_time(duration_arg)
+            if parsed_duration:
+                duration = parsed_duration
+                reason = " ".join(args[1:])
+            else:
+                reason = " ".join(args)
+
+        try:
+            if duration:
+                await chat.ban_member(target_user.id, until_date=datetime.now() + duration)
+                await update.message.reply_text(f"Berhasil membatasi {target_user.mention_html()} selama {duration}.", parse_mode='HTML')
+            else:
+                await chat.ban_member(target_user.id)
+                await update.message.reply_text(f"Berhasil membatasi {target_user.mention_html()}.", parse_mode='HTML')
+
+            if reason:
+                await update.message.reply_text(f"Alasan: {reason}")
+
+        except Exception as e:
+            await update.message.reply_text(f"Gagal membatasi pengguna: {e}")
+
+    # Ban by username or ID
+    elif context.args:
+        target_input = context.args[0]
+
+        duration = None
+        reason = ""
+
+        if len(context.args) > 1:
+            duration_arg = context.args[1]
+            parsed_duration = parse_time(duration_arg)
+            if parsed_duration:
+                duration = parsed_duration
+                reason = " ".join(context.args[2:])
+            else:
+                reason = " ".join(context.args[1:])
+
+        try:
+            if target_input.startswith('@'):
+                target_user = await context.bot.get_chat(target_input)
+                user_id = target_user.id
+            else:
+                user_id = int(target_input)
+
+            if duration:
+                await chat.ban_member(user_id, until_date=datetime.now() + duration)
+                await update.message.reply_text(f"Berhasil membatasi pengguna {user_id} selama {duration}.", parse_mode='HTML')
+            else:
+                await chat.ban_member(user_id)
+                await update.message.reply_text(f"Berhasil membatasi pengguna {user_id}.", parse_mode='HTML')
+
+            if reason:
+                await update.message.reply_text(f"Alasan: {reason}")
+
+        except Exception as e:
+            await update.message.reply_text(f"Gagal membatasi pengguna: {e}")
+
+    else:
+        await update.message.reply_text(
+            "Gunakan format: /ban @username|user_id [waktu] [alasan]\n"
+            "Atau balas pesan pengguna dengan /ban [waktu] [alasan]"
+        )
+
+async def afk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # Cek apakah user adalah admin atau owner
+    is_admin = False
+    if user.id == OWNER_ID:
+        is_admin = True
+    else:
+        try:
+            member = await chat.get_member(user.id)
+            if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                is_admin = True
+        except Exception as e:
+            logger.error(f"Gagal memverifikasi status admin untuk AFK: {e}")
+
+    if not is_admin:
+        await update.message.reply_text("Maaf, Anda harus menjadi admin untuk menggunakan perintah ini.")
+        return
+
+    reason = ""
+    if update.message.reply_to_message:
+        if update.message.reply_to_message.text:
+            reason = update.message.reply_to_message.text
+        elif update.message.reply_to_message.caption:
+            reason = update.message.reply_to_message.caption
+    elif context.args:
+        reason = " ".join(context.args)
+
+    if not reason:
+        reason = "AFK"
+
+    jadwal_data["afk_users"][str(user.id)] = {
+        "reason": reason,
+        "time": datetime.now().isoformat()
+    }
+    save_data()
+
+    await update.message.reply_text(f"{user.mention_html()} sekarang AFK.", parse_mode='HTML')
+
+async def noafk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    if str(user.id) in jadwal_data["afk_users"]:
+        del jadwal_data["afk_users"][str(user.id)]
+        save_data()
+        await update.message.reply_text(f"{user.mention_html()} sudah tidak AFK.", parse_mode='HTML')
+
 async def jadwal_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global last_jadwal_time
     user_id = update.effective_user.id
@@ -996,9 +1149,43 @@ async def panel_refresh(update_or_query, context, is_callback=False):
         logger.error(f"Panel refresh error: {e}")
 
 # =================== TEXT INPUT HANDLER ===================
+async def handle_afk_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    message = update.message
+
+    # Cek apakah user yang mengirim pesan sedang AFK
+    if str(user.id) in jadwal_data["afk_users"]:
+        del jadwal_data["afk_users"][str(user.id)]
+        save_data()
+        await message.reply_text(f"{user.mention_html()} sudah tidak AFK.", parse_mode='HTML')
+
+    # Cek apakah ada mention ke user yang AFK
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == 'mention':
+                mention = message.text[entity.offset:entity.offset+entity.length]
+                # Cari user_id dari mention
+                # Ini cara yang kurang efisien, lebih baik jika ada cara langsung
+                # Untuk saat ini, kita akan skip implementasi ini karena kompleksitas
+                pass
+            elif entity.type == 'text_mention':
+                mentioned_user_id = entity.user.id
+                if str(mentioned_user_id) in jadwal_data["afk_users"]:
+                    afk_data = jadwal_data["afk_users"][str(mentioned_user_id)]
+                    afk_reason = afk_data["reason"]
+                    afk_time = datetime.fromisoformat(afk_data["time"])
+
+                    await message.reply_text(
+                        f"{entity.user.mention_html()} sedang AFK: {afk_reason} "
+                        f"(sejak {afk_time.strftime('%Y-%m-%d %H:%M:%S')})",
+                        parse_mode='HTML'
+                    )
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Safety check untuk user yang valid
     if not update.effective_user or update.effective_user.id != OWNER_ID:
+        # Panggil handle_afk_status untuk non-owner
+        await handle_afk_status(update, context)
         return
 
     waiting_for = context.user_data.get('waiting_input')

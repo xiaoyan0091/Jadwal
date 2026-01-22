@@ -21,7 +21,8 @@ jadwal_data = {
         "Jumat": {"type": "", "url": ""},
         "Sabtu": {"type": "", "url": ""},
         "Minggu": {"type": "", "url": ""}
-    }
+    },
+    "afk_users": {} # {user_id: {"reason": "...", "time": "..."}}
 }
 
 def save_data():
@@ -56,6 +57,8 @@ def load_data():
                         "Sabtu": {"type": "", "url": ""},
                         "Minggu": {"type": "", "url": ""}
                     }
+            if "afk_users" not in jadwal_data:
+                jadwal_data["afk_users"] = {}
                 # Hapus old fields
                 if "jadwal_foto" in jadwal_data:
                     del jadwal_data["jadwal_foto"]
